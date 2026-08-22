@@ -1,0 +1,28 @@
+services:
+  syncwave:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: syncwave
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+      - DATA_DIR=/data
+      - JWT_SECRET=change-this-to-a-secure-random-32-character-secret-key
+      - SYNC_INTERVAL_MINUTES=60
+      - MAX_CONCURRENT_DOWNLOADS=2
+      - APP_ENV=production
+      # - HTTP_PROXY=http://user:pass@proxy-host:port
+    volumes:
+      - ./data:/data
+    # Optional Traefik reverse proxy configuration:
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.syncwave.rule=Host(`music.yourdomain.com`)"
+    #   - "traefik.http.routers.syncwave.entrypoints=websecure"
+    #   - "traefik.http.routers.syncwave.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.syncwave.loadbalancer.server.port=8080"
+

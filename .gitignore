@@ -1,0 +1,33 @@
+# Binaries
+syncwave
+syncwave.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Storage & Runtime data
+data/
+data_*/
+*.db
+*.db-wal
+*.db-shm
+cookies.txt
+*.log
+
+# Frontend build & deps
+web/node_modules/
+web/dist/
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDEs & OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
