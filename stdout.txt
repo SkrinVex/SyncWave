@@ -1,0 +1,49 @@
+[youtube] Extracting URL: https://www.youtube.com/watch?v=usvTbqTHwyw
+[youtube] usvTbqTHwyw: Downloading webpage
+[youtube] usvTbqTHwyw: Downloading visionos player API JSON
+[youtube] usvTbqTHwyw: Downloading m3u8 information
+[info] usvTbqTHwyw: Downloading 1 format(s): 399+251
+METADATA:usvTbqTHwyw
+[download] Destination: /tmp/usvTbqTHwyw.f399.mp4
+[download]   0.0% of    4.28MiB at    2.50KiB/s ETA 29:16
+[download]   0.1% of    4.28MiB at    6.62KiB/s ETA 11:02
+[download]   0.2% of    4.28MiB at   14.82KiB/s ETA 04:57
+[download]   0.3% of    4.28MiB at   30.85KiB/s ETA 02:21
+[download]   0.7% of    4.28MiB at   61.63KiB/s ETA 01:10
+[download]   1.4% of    4.28MiB at  119.91KiB/s ETA 00:36
+[download]   2.9% of    4.28MiB at   77.76KiB/s ETA 00:54
+[download]   4.2% of    4.28MiB at  107.85KiB/s ETA 00:38
+[download]   6.8% of    4.28MiB at  172.08KiB/s ETA 00:23
+[download]  12.1% of    4.28MiB at  299.20KiB/s ETA 00:12
+[download]  22.6% of    4.28MiB at  371.62KiB/s ETA 00:09
+[download]  34.4% of    4.28MiB at  225.49KiB/s ETA 00:12
+[download]  40.2% of    4.28MiB at  258.60KiB/s ETA 00:10
+[download]  52.0% of    4.28MiB at  323.67KiB/s ETA 00:06
+[download]  75.5% of    4.28MiB at  432.57KiB/s ETA 00:02
+[download] 100.0% of    4.28MiB at  428.52KiB/s ETA 00:00
+[download] 100% of    4.28MiB in 00:00:11 at 371.22KiB/s
+[download] Destination: /tmp/usvTbqTHwyw.f251.webm
+[download]   0.0% of    2.71MiB at  103.66KiB/s ETA 00:26
+[download]   0.1% of    2.71MiB at   51.70KiB/s ETA 00:53
+[download]   0.3% of    2.71MiB at   87.92KiB/s ETA 00:31
+[download]   0.5% of    2.71MiB at  149.78KiB/s ETA 00:18
+[download]   1.1% of    2.71MiB at  214.52KiB/s ETA 00:12
+[download]   2.3% of    2.71MiB at  338.50KiB/s ETA 00:08
+[download]   4.6% of    2.71MiB at  159.36KiB/s ETA 00:16
+[download]   8.4% of    2.71MiB at  190.63KiB/s ETA 00:13
+[download]  15.9% of    2.71MiB at  217.51KiB/s ETA 00:10
+[download]  25.2% of    2.71MiB at  215.52KiB/s ETA 00:09
+[download]  32.9% of    2.71MiB at  186.82KiB/s ETA 00:09
+[download]  37.5% of    2.71MiB at  180.44KiB/s ETA 00:09
+[download]  42.8% of    2.71MiB at  132.15KiB/s ETA 00:12
+[download]  45.4% of    2.71MiB at  102.81KiB/s ETA 00:14
+[download]  46.7% of    2.71MiB at  105.34KiB/s ETA 00:14
+[download]  49.3% of    2.71MiB at  109.80KiB/s ETA 00:12
+[download]  54.6% of    2.71MiB at  119.53KiB/s ETA 00:10
+[download]  65.1% of    2.71MiB at  139.99KiB/s ETA 00:06
+[download]  86.1% of    2.71MiB at  181.77KiB/s ETA 00:02
+[download] 100.0% of    2.71MiB at  209.69KiB/s ETA 00:00
+[download] 100% of    2.71MiB in 00:00:13 at 203.13KiB/s
+[Merger] Merging formats into "/tmp/usvTbqTHwyw.webm"
+Deleting original file /tmp/usvTbqTHwyw.f251.webm (pass -k to keep)
+Deleting original file /tmp/usvTbqTHwyw.f399.mp4 (pass -k to keep)

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
+import { useSyncStore } from './sync'
 
 export const usePlaylistsStore = defineStore('playlists', () => {
   const authStore = useAuthStore()
@@ -40,8 +41,13 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     })
 
     if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error || 'Failed to add playlist')
+      const errText = await res.text()
+      let errMsg = errText
+      try {
+        const json = JSON.parse(errText)
+        if (json.error) errMsg = json.error
+      } catch {}
+      throw new Error(errMsg || 'Не удалось добавить плейлист')
     }
 
     const newPl = await res.json()
@@ -62,6 +68,9 @@ export const usePlaylistsStore = defineStore('playlists', () => {
   }
 
   async function triggerSync(id) {
+    const syncStore = useSyncStore()
+    syncStore.progress.active = true
+    syncStore.progress.status_text = 'Запуск синхронизации...'
     const res = await fetch(`/api/v1/playlists/${id}/sync`, {
       method: 'POST',
       headers: authStore.authHeaders(),
@@ -78,4 +87,3 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     triggerSync,
   }
 })
-

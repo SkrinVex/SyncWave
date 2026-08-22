@@ -2,12 +2,23 @@
   <div
     @click="$emit('play', track)"
     :class="[
-      'flex items-center gap-4 px-4 py-2.5 rounded-lg cursor-pointer transition-all select-none group text-left border',
-      isCurrentTrack
-        ? 'bg-studio-elevated border-indigo-500/40 text-indigo-200'
-        : 'border-transparent hover:bg-studio-elevated hover:border-studio-border text-zinc-300'
+      'flex items-center gap-3 md:gap-4 px-3 md:px-4 py-2.5 rounded-lg cursor-pointer transition-all select-none group text-left border',
+      selected ? 'bg-indigo-950/40 border-indigo-500/50 text-indigo-100' : (
+        isCurrentTrack
+          ? 'bg-studio-elevated border-indigo-500/40 text-indigo-200'
+          : 'border-transparent hover:bg-studio-elevated hover:border-studio-border text-zinc-300'
+      )
     ]"
   >
+    <!-- Checkbox for multi-select -->
+    <div class="shrink-0 flex items-center" @click.stop="$emit('toggle-select', track)">
+      <input
+        type="checkbox"
+        :checked="selected"
+        class="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-indigo-600 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+      />
+    </div>
+
     <!-- Index / Play Button -->
     <div class="w-6 text-center shrink-0">
       <span v-if="!isCurrentPlaying" class="font-mono text-xs text-zinc-400 group-hover:hidden">
@@ -117,9 +128,13 @@ const props = defineProps({
     type: Number,
     required: true,
   },
+  selected: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-defineEmits(['play', 'delete'])
+defineEmits(['play', 'delete', 'toggle-select'])
 
 const tracksStore = useTracksStore()
 const playerStore = usePlayerStore()
@@ -138,4 +153,3 @@ function onImageError(e) {
   e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="%236366f1" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
 }
 </script>
-

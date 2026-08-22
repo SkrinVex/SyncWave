@@ -17,6 +17,7 @@ export const useSyncStore = defineStore('sync', () => {
     total_tracks: 0,
     current_track_title: '',
     current_track_id: '',
+    track_percentage: 0,
     percentage: 0,
     speed: '',
     eta: '',
@@ -29,6 +30,7 @@ export const useSyncStore = defineStore('sync', () => {
   function connectSSE() {
     if (eventSource) {
       eventSource.close()
+      eventSource = null
     }
 
     const t = authStore.token
@@ -36,13 +38,12 @@ export const useSyncStore = defineStore('sync', () => {
 
     eventSource = new EventSource(`/api/v1/sync/events?token=${encodeURIComponent(t)}`)
 
-    eventSource.addEventListener('message', (event) => {
+    eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data)
         if (payload.type === 'progress') {
           progress.value = { ...progress.value, ...payload.data }
           if (!payload.data.active) {
-            // When sync completes, refresh tracks and playlists
             tracksStore.fetchTracks()
             tracksStore.fetchStats()
             playlistsStore.fetchPlaylists()
@@ -53,6 +54,7 @@ export const useSyncStore = defineStore('sync', () => {
             logs.value.pop()
           }
         } else if (payload.type === 'track_updated') {
+          tracksStore.updateTrack(payload.data)
           tracksStore.fetchStats()
         } else if (payload.type === 'playlist_updated') {
           playlistsStore.fetchPlaylists()
@@ -60,15 +62,14 @@ export const useSyncStore = defineStore('sync', () => {
       } catch (e) {
         console.error('Failed to parse SSE event:', e)
       }
-    })
+    }
 
     eventSource.onerror = () => {
-      // Reconnect after brief delay
       setTimeout(() => {
         if (authStore.isAuthenticated) {
           connectSSE()
         }
-      }, 5000)
+      }, 3000)
     }
   }
 
@@ -106,6 +107,8 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   async function triggerSyncAll() {
+    progress.value.active = true
+    progress.value.status_text = 'Подготовка к синхронизации...'
     const res = await fetch('/api/v1/sync/trigger', {
       method: 'POST',
       headers: authStore.authHeaders(),
@@ -123,6 +126,22 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
+  async function cancelSync() {
+    try {
+      const res = await fetch('/api/v1/sync/cancel', {
+        method: 'POST',
+        headers: authStore.authHeaders(),
+      })
+      if (res.ok) {
+        progress.value.active = false
+        progress.value.status_text = 'Отменено'
+      }
+      return res.ok
+    } catch (e) {
+      console.error('Failed to cancel sync:', e)
+    }
+  }
+
   return {
     progress,
     logs,
@@ -131,7 +150,7 @@ export const useSyncStore = defineStore('sync', () => {
     fetchLogs,
     fetchInitialProgress,
     triggerSyncAll,
+    cancelSync,
     clearLogs,
   }
 })
-

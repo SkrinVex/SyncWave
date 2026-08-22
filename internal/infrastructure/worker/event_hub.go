@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/syncwave/syncwave/internal/domain"
 )
@@ -37,7 +38,7 @@ func NewEventHub() *EventHub {
 func (h *EventHub) Subscribe() chan EventMessage {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	ch := make(chan EventMessage, 64)
+	ch := make(chan EventMessage, 128)
 	h.clients[ch] = true
 	return ch
 }
@@ -59,7 +60,7 @@ func (h *EventHub) Broadcast(msg EventMessage) {
 		select {
 		case ch <- msg:
 		default:
-			// Client channel full or slow, skip to avoid blocking others
+			// Non-blocking drop if consumer is stuck
 		}
 	}
 }
@@ -81,21 +82,30 @@ func (h *EventHub) BroadcastLog(log domain.SyncLog) {
 func (h *EventHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
+		if u, ok2 := w.(interface{ Unwrap() http.ResponseWriter }); ok2 {
+			flusher, ok = u.Unwrap().(http.Flusher)
+		}
+	}
+	if !ok {
 		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	ch := h.Subscribe()
 	defer h.Unsubscribe(ch)
 
-	// Send initial connected event
-	fmt.Fprintf(w, "event: connected\ndata: {}\n\n")
+	// Send initial connected payload
+	fmt.Fprintf(w, "data: {\"type\":\"connected\"}\n\n")
 	flusher.Flush()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
 
 	notify := r.Context().Done()
 
@@ -103,6 +113,9 @@ func (h *EventHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-notify:
 			return
+		case <-ticker.C:
+			fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
 		case msg, ok := <-ch:
 			if !ok {
 				return
@@ -111,7 +124,7 @@ func (h *EventHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", bytes)
+			fmt.Fprintf(w, "data: %s\n\n", bytes)
 			flusher.Flush()
 		}
 	}

@@ -48,8 +48,13 @@ export const useSettingsStore = defineStore('settings', () => {
       body: JSON.stringify(payload),
     })
     if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error || 'Failed to update settings')
+      const errText = await res.text()
+      let errMsg = errText
+      try {
+        const json = JSON.parse(errText)
+        if (json.error) errMsg = json.error
+      } catch {}
+      throw new Error(errMsg || 'Не удалось сохранить настройки')
     }
     await fetchSettings()
   }
@@ -65,8 +70,13 @@ export const useSettingsStore = defineStore('settings', () => {
     })
 
     if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error || 'Failed to upload cookies file')
+      const errText = await res.text()
+      let errMsg = errText
+      try {
+        const json = JSON.parse(errText)
+        if (json.error) errMsg = json.error
+      } catch {}
+      throw new Error(errMsg || 'Не удалось загрузить cookies.txt')
     }
     await fetchSettings()
   }
@@ -90,9 +100,14 @@ export const useSettingsStore = defineStore('settings', () => {
       },
       body: JSON.stringify({ proxy_url: proxyUrl }),
     })
-    const data = await res.json()
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || 'Proxy connection test failed')
+    if (!res.ok) {
+      const errText = await res.text()
+      let errMsg = errText
+      try {
+        const json = JSON.parse(errText)
+        if (json.error) errMsg = json.error
+      } catch {}
+      throw new Error(errMsg || 'Ошибка проверки прокси')
     }
     return true
   }
@@ -107,4 +122,3 @@ export const useSettingsStore = defineStore('settings', () => {
     testProxy,
   }
 })
-

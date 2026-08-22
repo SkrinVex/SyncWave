@@ -47,7 +47,7 @@ func main() {
 	// 2. Infrastructure Services
 	hasher := auth.NewPasswordHasher()
 	jwtService := auth.NewJWTService(cfg.JWTSecret)
-	ytdlpClient := ytdlp.NewClient(cfg.YTDLPPath, cfg.FFmpegPath, cfg.CookiesPath, cfg.MusicDir, cfg.CoversDir)
+	ytdlpClient := ytdlp.NewClient(cfg.YtDlpPath, cfg.FFmpegPath, cfg.CookiesPath, cfg.MusicDir, cfg.CoversDir)
 	eventHub := worker.NewEventHub()
 
 	// 3. Worker & Scheduler
@@ -73,7 +73,7 @@ func main() {
 	authMiddleware := middleware.NewAuthMiddleware(jwtService)
 	authHandler := handler.NewAuthHandler(authUsecase)
 	trackHandler := handler.NewTrackHandler(trackUsecase)
-	playlistHandler := handler.NewPlaylistHandler(playlistUsecase)
+	playlistHandler := handler.NewPlaylistHandler(playlistUsecase, syncUsecase)
 	syncHandler := handler.NewSyncHandler(syncUsecase, eventHub)
 	settingsHandler := handler.NewSettingsHandler(settingsUsecase)
 	streamHandler := handler.NewStreamHandler(trackUsecase)

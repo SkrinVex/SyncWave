@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/syncwave/syncwave/internal/delivery/http/middleware"
 	"github.com/syncwave/syncwave/internal/infrastructure/worker"
 	"github.com/syncwave/syncwave/internal/usecase"
 )
@@ -22,18 +21,23 @@ func NewSyncHandler(syncUsecase *usecase.SyncUsecase, eventHub *worker.EventHub)
 }
 
 func (h *SyncHandler) TriggerAll(w http.ResponseWriter, r *http.Request) {
-	claims := middleware.GetUserClaims(r.Context())
-	if claims == nil {
+	userID, _ := r.Context().Value("user_id").(string)
+	if userID == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
 
-	if err := h.syncUsecase.TriggerSyncAll(claims.UserID); err != nil {
+	if err := h.syncUsecase.TriggerSyncAll(userID); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "sync started for all playlists"})
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Синхронизация запущена для всех плейлистов"})
+}
+
+func (h *SyncHandler) Cancel(w http.ResponseWriter, r *http.Request) {
+	h.syncUsecase.CancelSync()
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Синхронизация отменена"})
 }
 
 func (h *SyncHandler) GetProgress(w http.ResponseWriter, r *http.Request) {
@@ -57,9 +61,10 @@ func (h *SyncHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SyncHandler) ClearLogs(w http.ResponseWriter, r *http.Request) {
-	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
-	if days <= 0 {
-		days = 7
+	daysStr := r.URL.Query().Get("days")
+	days := 0
+	if daysStr != "" {
+		days, _ = strconv.Atoi(daysStr)
 	}
 
 	if err := h.syncUsecase.ClearLogs(days); err != nil {
@@ -67,7 +72,7 @@ func (h *SyncHandler) ClearLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "logs cleaned"})
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Журнал логов очищен"})
 }
 
 func (h *SyncHandler) StreamEvents(w http.ResponseWriter, r *http.Request) {

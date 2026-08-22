@@ -293,6 +293,27 @@ func (r *TrackRepository) Delete(id string) error {
 	return nil
 }
 
+func (r *TrackRepository) BatchDelete(ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := fmt.Sprintf("DELETE FROM tracks WHERE id IN (%s);", strings.Join(placeholders, ","))
+	_, err := r.db.Exec(query, args...)
+	return err
+}
+
+func (r *TrackRepository) CleanBrokenTracks() error {
+	query := `DELETE FROM tracks WHERE status IN ('downloading', 'failed', 'queued');`
+	_, err := r.db.Exec(query)
+	return err
+}
+
 func (r *TrackRepository) GetStats() (*domain.TrackStats, error) {
 	stats := &domain.TrackStats{}
 

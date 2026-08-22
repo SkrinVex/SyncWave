@@ -28,6 +28,7 @@ type SyncProgress struct {
 	TotalTracks       int     `json:"total_tracks"`
 	CurrentTrackTitle string  `json:"current_track_title"`
 	CurrentTrackID    string  `json:"current_track_id"`
+	TrackPercentage   float64 `json:"track_percentage"`
 	Percentage        float64 `json:"percentage"`
 	Speed             string  `json:"speed"`
 	ETA               string  `json:"eta"`
@@ -38,4 +39,5 @@ type SyncLogRepository interface {
 	Create(log *SyncLog) error
 	ListRecent(limit int) ([]SyncLog, error)
 	ClearOlderThan(days int) error
+	ClearAll() error
 }

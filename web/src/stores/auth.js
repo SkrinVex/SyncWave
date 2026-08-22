@@ -16,10 +16,12 @@ export const useAuthStore = defineStore('auth', () => {
   async function checkStatus() {
     try {
       const res = await fetch('/api/v1/auth/status')
-      const data = await res.json()
-      needsSetup.value = data.needs_setup
-      if (token.value && !needsSetup.value) {
-        await fetchMe()
+      if (res.ok) {
+        const data = await res.json()
+        needsSetup.value = data.needs_setup
+        if (token.value && !needsSetup.value) {
+          await fetchMe()
+        }
       }
     } catch (e) {
       console.error('Failed to check auth status:', e)
@@ -35,8 +37,13 @@ export const useAuthStore = defineStore('auth', () => {
         body: JSON.stringify({ username, password }),
       })
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to setup admin')
+        const errText = await res.text()
+        let errMsg = errText
+        try {
+          const json = JSON.parse(errText)
+          if (json.error) errMsg = json.error
+        } catch {}
+        throw new Error(errMsg || 'Не удалось создать администратора')
       }
       const data = await res.json()
       setSession(data.token, data.user)
@@ -56,8 +63,13 @@ export const useAuthStore = defineStore('auth', () => {
         body: JSON.stringify({ username, password }),
       })
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Invalid credentials')
+        const errText = await res.text()
+        let errMsg = errText
+        try {
+          const json = JSON.parse(errText)
+          if (json.error) errMsg = json.error
+        } catch {}
+        throw new Error(errMsg || 'Неверные учетные данные')
       }
       const data = await res.json()
       setSession(data.token, data.user)
@@ -108,10 +120,10 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     authHeaders,
     checkStatus,
+    checkAuthStatus: checkStatus,
     setupAdmin,
     login,
     logout,
     fetchMe,
   }
 })
-

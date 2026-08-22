@@ -74,10 +74,16 @@ func (r *SyncLogRepository) ListRecent(limit int) ([]domain.SyncLog, error) {
 
 func (r *SyncLogRepository) ClearOlderThan(days int) error {
 	if days <= 0 {
-		days = 7
+		return r.ClearAll()
 	}
 	cutoff := time.Now().UTC().AddDate(0, 0, -days)
 	query := `DELETE FROM sync_logs WHERE created_at < ?;`
 	_, err := r.db.Exec(query, cutoff)
+	return err
+}
+
+func (r *SyncLogRepository) ClearAll() error {
+	query := `DELETE FROM sync_logs;`
+	_, err := r.db.Exec(query)
 	return err
 }

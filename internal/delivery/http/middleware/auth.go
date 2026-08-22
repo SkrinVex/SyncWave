@@ -10,7 +10,10 @@ import (
 
 type contextKey string
 
-const UserContextKey contextKey = "user_claims"
+const (
+	UserContextKey contextKey = "user_claims"
+	UserIDKey      contextKey = "user_id"
+)
 
 type AuthMiddleware struct {
 	jwtService *auth.JWTService
@@ -47,6 +50,8 @@ func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 		}
 
 		ctx := context.WithValue(r.Context(), UserContextKey, claims)
+		ctx = context.WithValue(ctx, UserIDKey, claims.UserID)
+		ctx = context.WithValue(ctx, "user_id", claims.UserID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -57,4 +62,17 @@ func GetUserClaims(ctx context.Context) *auth.Claims {
 		return nil
 	}
 	return claims
+}
+
+func GetUserID(ctx context.Context) string {
+	if claims := GetUserClaims(ctx); claims != nil {
+		return claims.UserID
+	}
+	if id, ok := ctx.Value("user_id").(string); ok {
+		return id
+	}
+	if id, ok := ctx.Value(UserIDKey).(string); ok {
+		return id
+	}
+	return ""
 }

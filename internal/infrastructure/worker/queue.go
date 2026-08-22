@@ -14,7 +14,6 @@ import (
 type SyncTask struct {
 	PlaylistID string
 	Manual     bool
-	ResultChan chan error
 }
 
 type WorkerQueue struct {
@@ -24,12 +23,14 @@ type WorkerQueue struct {
 	logRepo      domain.SyncLogRepository
 	eventHub     *EventHub
 
-	taskQueue chan SyncTask
-	mu        sync.RWMutex
-	isSyncing bool
-	current   domain.SyncProgress
-	ctx       context.Context
-	cancel    context.CancelFunc
+	taskQueue  chan SyncTask
+	isSyncing  bool
+	current    domain.SyncProgress
+	mu         sync.RWMutex
+	ctx        context.Context
+	cancel     context.CancelFunc
+	taskCtx    context.Context
+	taskCancel context.CancelFunc
 }
 
 func NewWorkerQueue(
@@ -38,12 +39,11 @@ func NewWorkerQueue(
 	playlistRepo domain.PlaylistRepository,
 	logRepo domain.SyncLogRepository,
 	eventHub *EventHub,
-	maxQueueSize int,
+	queueSize int,
 ) *WorkerQueue {
-	if maxQueueSize <= 0 {
-		maxQueueSize = 50
-	}
 	ctx, cancel := context.WithCancel(context.Background())
+	// On startup, clean up any unfinished/broken tracks from previous crashes
+	_ = trackRepo.CleanBrokenTracks()
 
 	return &WorkerQueue{
 		ytdlpClient:  ytdlpClient,
@@ -51,7 +51,7 @@ func NewWorkerQueue(
 		playlistRepo: playlistRepo,
 		logRepo:      logRepo,
 		eventHub:     eventHub,
-		taskQueue:    make(chan SyncTask, maxQueueSize),
+		taskQueue:    make(chan SyncTask, queueSize),
 		ctx:          ctx,
 		cancel:       cancel,
 	}
@@ -62,6 +62,7 @@ func (q *WorkerQueue) Start() {
 }
 
 func (q *WorkerQueue) Stop() {
+	q.CancelCurrent()
 	q.cancel()
 }
 
@@ -76,6 +77,18 @@ func (q *WorkerQueue) Enqueue(playlistID string, manual bool) error {
 		return nil
 	default:
 		return fmt.Errorf("sync queue is currently full")
+	}
+}
+
+func (q *WorkerQueue) CancelCurrent() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.isSyncing && q.taskCancel != nil {
+		q.taskCancel()
+		q.isSyncing = false
+		q.current = domain.SyncProgress{Active: false}
+		q.eventHub.BroadcastProgress(domain.SyncProgress{Active: false})
+		q.log(nil, nil, domain.LogLevelWarn, "Синхронизация была отменена пользователем")
 	}
 }
 
@@ -116,6 +129,8 @@ func (q *WorkerQueue) log(playlistID *string, trackID *string, level domain.LogL
 
 func (q *WorkerQueue) processTask(task SyncTask) {
 	q.mu.Lock()
+	q.taskCtx, q.taskCancel = context.WithCancel(q.ctx)
+	taskCtx := q.taskCtx
 	q.isSyncing = true
 	q.current = domain.SyncProgress{
 		Active:     true,
@@ -155,8 +170,13 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 	q.mu.Unlock()
 	q.eventHub.BroadcastProgress(q.GetCurrentProgress())
 
-	flatOutput, err := q.ytdlpClient.ExtractPlaylistDelta(q.ctx, playlist.YouTubeID)
+	flatOutput, err := q.ytdlpClient.ExtractPlaylistDelta(taskCtx, playlist.YouTubeID)
 	if err != nil {
+		if taskCtx.Err() != nil {
+			playlist.Status = domain.PlaylistStatusIdle
+			_ = q.playlistRepo.Update(playlist)
+			return
+		}
 		playlist.Status = domain.PlaylistStatusError
 		playlist.ErrorMessage = err.Error()
 		_ = q.playlistRepo.Update(playlist)
@@ -173,9 +193,10 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 	extractedIDs := make([]string, 0, len(flatOutput.Entries))
 	entryMap := make(map[string]ytdlp.PlaylistEntry)
 	for _, e := range flatOutput.Entries {
-		if e.ID != "" {
-			extractedIDs = append(extractedIDs, e.ID)
-			entryMap[e.ID] = e
+		id := e.GetID()
+		if id != "" {
+			extractedIDs = append(extractedIDs, id)
+			entryMap[id] = e
 		}
 	}
 
@@ -205,8 +226,10 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 
 	for idx, entry := range missingEntries {
 		select {
-		case <-q.ctx.Done():
-			q.log(&playlist.ID, nil, domain.LogLevelWarn, "Sync aborted: server shutting down")
+		case <-taskCtx.Done():
+			playlist.Status = domain.PlaylistStatusIdle
+			_ = q.playlistRepo.Update(playlist)
+			q.log(&playlist.ID, nil, domain.LogLevelWarn, "Синхронизация была прервана пользователем")
 			return
 		default:
 		}
@@ -214,29 +237,30 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		currentIndex := idx + 1
 		trackTitle := entry.Title
 		if trackTitle == "" {
-			trackTitle = entry.ID
+			trackTitle = entry.GetID()
 		}
 
 		q.mu.Lock()
 		q.current.CurrentTrackIndex = currentIndex
 		q.current.TotalTracks = totalToDownload
 		q.current.CurrentTrackTitle = trackTitle
-		q.current.CurrentTrackID = entry.ID
+		q.current.CurrentTrackID = entry.GetID()
+		q.current.TrackPercentage = 0
 		q.current.Percentage = float64(idx) / float64(totalToDownload) * 100.0
-		q.current.StatusText = fmt.Sprintf("[%d/%d] Downloading: %s", currentIndex, totalToDownload, trackTitle)
+		q.current.StatusText = fmt.Sprintf("[%d/%d] %s", currentIndex, totalToDownload, trackTitle)
 		q.mu.Unlock()
 		q.eventHub.BroadcastProgress(q.GetCurrentProgress())
 
-		// Create/ensure placeholder track record in DB
+		// Create temporary placeholder track record in DB
 		trackID := uuid.New().String()
 		now := time.Now().UTC()
 		initialTrack := &domain.Track{
 			ID:         trackID,
-			YouTubeID:  entry.ID,
+			YouTubeID:  entry.GetID(),
 			PlaylistID: &playlist.ID,
 			Title:      trackTitle,
 			Artist:     entry.Uploader,
-			Duration:   entry.Duration,
+			Duration:   entry.GetDuration(),
 			Status:     domain.TrackStatusDownloading,
 			CreatedAt:  now,
 			UpdatedAt:  now,
@@ -246,20 +270,29 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelInfo, fmt.Sprintf("[%d/%d] Fetching audio & tags: %s", currentIndex, totalToDownload, trackTitle))
 
 		// Download track via yt-dlp
-		res, dlErr := q.ytdlpClient.DownloadTrack(q.ctx, entry.ID, func(percent float64, speed, eta, status string) {
+		res, dlErr := q.ytdlpClient.DownloadTrack(taskCtx, entry.GetID(), func(percent float64, speed, eta, status string) {
 			q.mu.Lock()
+			q.current.TrackPercentage = percent
 			q.current.Speed = speed
 			q.current.ETA = eta
+			if totalToDownload > 0 {
+				q.current.Percentage = (float64(idx) + percent/100.0) / float64(totalToDownload) * 100.0
+			}
 			q.mu.Unlock()
 			q.eventHub.BroadcastProgress(q.GetCurrentProgress())
 		})
 
 		if dlErr != nil {
+			if taskCtx.Err() != nil {
+				_ = q.trackRepo.Delete(initialTrack.ID)
+				playlist.Status = domain.PlaylistStatusIdle
+				_ = q.playlistRepo.Update(playlist)
+				return
+			}
 			failedCount++
-			initialTrack.Status = domain.TrackStatusFailed
-			initialTrack.ErrorMessage = dlErr.Error()
-			_ = q.trackRepo.Update(initialTrack)
-			q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelError, fmt.Sprintf("Failed to download %s: %v", trackTitle, dlErr))
+			// Remove the broken track from the database immediately so it never pollutes the library!
+			_ = q.trackRepo.Delete(initialTrack.ID)
+			q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Failed to download %s: %v", trackTitle, dlErr))
 		} else {
 			successCount++
 			initialTrack.Title = res.Title
@@ -282,7 +315,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		}
 
 		// Jitter/sleep between downloads to avoid aggressive throttling
-		time.Sleep(1500 * time.Millisecond)
+		time.Sleep(1200 * time.Millisecond)
 	}
 
 	// Finalize playlist status

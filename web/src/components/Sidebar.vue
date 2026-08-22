@@ -3,9 +3,10 @@
     <!-- Brand / Header -->
     <div>
       <div class="h-16 flex items-center px-6 gap-3 border-b border-studio-borderSubtle">
-        <div class="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M12 2v20M17 5v14M22 8v8M7 8v8M2 11v2" stroke-linecap="round"/>
+        <div class="w-8 h-8 rounded-lg bg-studio-elevated border border-studio-border flex items-center justify-center text-indigo-400 font-bold">
+          <!-- Soundwave Icon -->
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M12 3v18M17 7v10M22 10v4M7 7v10M2 10v4" stroke-linecap="round"/>
           </svg>
         </div>
         <div>
@@ -28,7 +29,7 @@
           <svg class="w-4 h-4 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
           </svg>
-          <span>Library</span>
+          <span>{{ i18n.t('nav.library') }}</span>
           <span v-if="tracksStore.total > 0" class="ml-auto text-xs font-mono text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-800/80">
             {{ tracksStore.total }}
           </span>
@@ -46,7 +47,7 @@
           <svg class="w-4 h-4 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15V6M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM12 12H3M16 6H3M12 18H3"/>
           </svg>
-          <span>Playlists</span>
+          <span>{{ i18n.t('nav.playlists') }}</span>
           <span v-if="playlistsStore.playlists.length > 0" class="ml-auto text-xs font-mono text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-800/80">
             {{ playlistsStore.playlists.length }}
           </span>
@@ -70,7 +71,7 @@
               class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping"
             ></span>
           </div>
-          <span>Sync & Logs</span>
+          <span>{{ i18n.t('nav.sync') }}</span>
           <span
             v-if="syncStore.progress.active"
             class="ml-auto text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-400 animate-pulse"
@@ -92,7 +93,7 @@
             <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
             <circle cx="12" cy="12" r="3"/>
           </svg>
-          <span>Settings</span>
+          <span>{{ i18n.t('nav.settings') }}</span>
         </button>
       </nav>
     </div>
@@ -115,7 +116,7 @@
         >
           <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
         </svg>
-        <span>{{ syncStore.progress.active ? 'Syncing...' : 'Sync All Playlists' }}</span>
+        <span>{{ syncStore.progress.active ? i18n.t('nav.syncing') : i18n.t('nav.syncAll') }}</span>
       </button>
 
       <!-- User Card -->
@@ -127,8 +128,8 @@
           <span class="font-medium text-zinc-300 truncate max-w-[100px]">{{ authStore.user?.username }}</span>
         </div>
         <button
-          @click="authStore.logout"
-          title="Sign out"
+          @click="$emit('request-sign-out')"
+          :title="i18n.t('nav.signOut')"
           class="text-zinc-400 hover:text-rose-400 transition-colors p-1"
         >
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -146,6 +147,7 @@ import { useTracksStore } from '../stores/tracks'
 import { usePlaylistsStore } from '../stores/playlists'
 import { useSyncStore } from '../stores/sync'
 import { useToastStore } from '../stores/toast'
+import { useI18nStore } from '../stores/i18n'
 
 defineProps({
   currentView: {
@@ -154,21 +156,21 @@ defineProps({
   }
 })
 
-defineEmits(['change-view'])
+defineEmits(['change-view', 'request-sign-out'])
 
 const authStore = useAuthStore()
 const tracksStore = useTracksStore()
 const playlistsStore = usePlaylistsStore()
 const syncStore = useSyncStore()
 const toast = useToastStore()
+const i18n = useI18nStore()
 
 async function triggerQuickSync() {
   const ok = await syncStore.triggerSyncAll()
   if (ok) {
-    toast.success('Sync triggered for all playlists')
+    toast.success(i18n.currentLang === 'ru' ? 'Синхронизация запущена для всех плейлистов' : 'Sync triggered for all playlists')
   } else {
-    toast.error('Failed to trigger sync')
+    toast.error(i18n.currentLang === 'ru' ? 'Не удалось запустить синхронизацию' : 'Failed to trigger sync')
   }
 }
 </script>
-

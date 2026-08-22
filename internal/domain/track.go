@@ -65,6 +65,8 @@ type TrackRepository interface {
 	List(filter TrackFilter) (*TrackListResult, error)
 	Update(track *Track) error
 	Delete(id string) error
+	BatchDelete(ids []string) error
+	CleanBrokenTracks() error
 	GetStats() (*TrackStats, error)
 	GetAllReady() ([]Track, error)
 }

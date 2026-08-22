@@ -42,13 +42,17 @@ FROM alpine:3.21 AS runner
 LABEL maintainer="SyncWave Team"
 LABEL description="Self-hosted YouTube Music Sync & Streaming Daemon"
 
-# Install yt-dlp, ffmpeg, ca-certificates, and utilities
+# Install python3, py3-pip, nodejs, ffmpeg, and install latest yt-dlp with yt-dlp-ejs challenge solver
 RUN apk add --no-cache \
-    yt-dlp \
+    python3 \
+    py3-pip \
+    nodejs \
     ffmpeg \
     ca-certificates \
     tzdata \
-    dumb-init
+    curl \
+    dumb-init && \
+    pip install --no-cache-dir --upgrade yt-dlp yt-dlp-ejs --break-system-packages
 
 WORKDIR /app
 
@@ -69,4 +73,3 @@ VOLUME ["/data"]
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/usr/local/bin/syncwave"]
-

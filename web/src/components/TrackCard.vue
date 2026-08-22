@@ -1,7 +1,10 @@
 <template>
   <div
     @click="$emit('play', track)"
-    class="group relative bg-studio-surface hover:bg-studio-elevated border border-studio-border hover:border-zinc-700/80 rounded-xl p-3 cursor-pointer transition-all duration-200 flex flex-col justify-between select-none shadow-sm hover:shadow-md"
+    :class="[
+      'group relative bg-studio-surface hover:bg-studio-elevated border rounded-xl p-3 cursor-pointer transition-all duration-200 flex flex-col justify-between select-none shadow-sm hover:shadow-md',
+      selected ? 'border-indigo-500/80 bg-indigo-950/30' : 'border-studio-border hover:border-zinc-700/80'
+    ]"
   >
     <!-- Cover Image with Overlay Play Button -->
     <div class="relative w-full aspect-square rounded-lg overflow-hidden bg-studio-elevated border border-studio-borderSubtle mb-3">
@@ -12,6 +15,19 @@
         loading="lazy"
         @error="onImageError"
       />
+
+      <!-- Checkbox overlay in top-left corner -->
+      <div
+        class="absolute top-2 left-2 z-10"
+        @click.stop="$emit('toggle-select', track)"
+      >
+        <input
+          type="checkbox"
+          :checked="selected"
+          class="w-4 h-4 rounded border-zinc-700 bg-zinc-900/90 text-indigo-600 focus:ring-0 focus:ring-offset-0 cursor-pointer shadow-md"
+        />
+      </div>
+
       <!-- Hover Play Overlay -->
       <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
         <div class="w-11 h-11 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-transform">
@@ -121,9 +137,13 @@ const props = defineProps({
     type: Object,
     required: true,
   },
+  selected: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-defineEmits(['play', 'delete'])
+defineEmits(['play', 'delete', 'toggle-select'])
 
 const tracksStore = useTracksStore()
 const playerStore = usePlayerStore()
@@ -143,4 +163,3 @@ function onImageError(e) {
   e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="%236366f1" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
 }
 </script>
-

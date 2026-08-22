@@ -45,6 +45,24 @@ func (u *TrackUsecase) Delete(id string) error {
 	return u.trackRepo.Delete(id)
 }
 
+func (u *TrackUsecase) BatchDelete(ids []string) error {
+	for _, id := range ids {
+		if track, err := u.trackRepo.GetByID(id); err == nil && track != nil {
+			if track.FilePath != "" {
+				_ = os.Remove(track.FilePath)
+			}
+			if track.CoverPath != "" {
+				_ = os.Remove(track.CoverPath)
+			}
+		}
+	}
+	return u.trackRepo.BatchDelete(ids)
+}
+
+func (u *TrackUsecase) CleanBrokenTracks() error {
+	return u.trackRepo.CleanBrokenTracks()
+}
+
 func (u *TrackUsecase) GetStats() (*domain.TrackStats, error) {
 	return u.trackRepo.GetStats()
 }

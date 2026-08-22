@@ -63,15 +63,30 @@ func (r *PlaylistRepository) GetByYouTubeID(youtubeID string) (*domain.Playlist,
 }
 
 func (r *PlaylistRepository) ListByUserID(userID string) ([]domain.Playlist, error) {
-	query := `
-	SELECT p.id, p.user_id, p.title, p.youtube_id, p.auto_sync, p.sync_interval_minutes,
-	       p.last_synced_at, p.status, p.error_message, p.created_at, p.updated_at,
-	       (SELECT COUNT(*) FROM tracks t WHERE t.playlist_id = p.id) AS track_count
-	FROM playlists p
-	WHERE p.user_id = ?
-	ORDER BY p.created_at DESC;
-	`
-	rows, err := r.db.Query(query, userID)
+	var query string
+	var rows *sql.Rows
+	var err error
+
+	if userID != "" {
+		query = `
+		SELECT p.id, p.user_id, p.title, p.youtube_id, p.auto_sync, p.sync_interval_minutes,
+		       p.last_synced_at, p.status, p.error_message, p.created_at, p.updated_at,
+		       (SELECT COUNT(*) FROM tracks t WHERE t.playlist_id = p.id) AS track_count
+		FROM playlists p
+		WHERE p.user_id = ? OR p.user_id = ''
+		ORDER BY p.created_at DESC;
+		`
+		rows, err = r.db.Query(query, userID)
+	} else {
+		query = `
+		SELECT p.id, p.user_id, p.title, p.youtube_id, p.auto_sync, p.sync_interval_minutes,
+		       p.last_synced_at, p.status, p.error_message, p.created_at, p.updated_at,
+		       (SELECT COUNT(*) FROM tracks t WHERE t.playlist_id = p.id) AS track_count
+		FROM playlists p
+		ORDER BY p.created_at DESC;
+		`
+		rows, err = r.db.Query(query)
+	}
 	if err != nil {
 		return nil, err
 	}

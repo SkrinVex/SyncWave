@@ -44,6 +44,15 @@ export const useTracksStore = defineStore('tracks', () => {
     return `/api/v1/tracks/${track.id}/download${t ? `?token=${encodeURIComponent(t)}` : ''}`
   }
 
+  function updateTrack(updatedTrack) {
+    const idx = tracks.value.findIndex(t => t.id === updatedTrack.id)
+    if (idx !== -1) {
+      tracks.value[idx] = updatedTrack
+    } else {
+      tracks.value.unshift(updatedTrack)
+    }
+  }
+
   async function fetchTracks(resetPage = false) {
     if (resetPage) page.value = 1
     loading.value = true
@@ -107,6 +116,30 @@ export const useTracksStore = defineStore('tracks', () => {
     return false
   }
 
+  async function batchDelete(ids) {
+    if (!ids || ids.length === 0) return false
+    try {
+      const res = await fetch('/api/v1/tracks/batch-delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authStore.authHeaders(),
+        },
+        body: JSON.stringify({ ids }),
+      })
+      if (res.ok) {
+        const idSet = new Set(ids)
+        tracks.value = tracks.value.filter(t => !idSet.has(t.id))
+        total.value = Math.max(0, total.value - ids.length)
+        fetchStats()
+        return true
+      }
+    } catch (e) {
+      console.error('Failed to batch delete tracks:', e)
+    }
+    return false
+  }
+
   return {
     tracks,
     total,
@@ -123,9 +156,11 @@ export const useTracksStore = defineStore('tracks', () => {
     getTrackStreamUrl,
     getTrackCoverUrl,
     getTrackDownloadUrl,
+    updateTrack,
     fetchTracks,
     fetchStats,
     deleteTrack,
+    batchDelete,
   }
 })
 

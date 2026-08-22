@@ -1,6 +1,6 @@
 <template>
   <header class="h-16 bg-studio-surface/90 backdrop-blur-md border-b border-studio-border px-6 flex items-center justify-between gap-4 select-none sticky top-0 z-20">
-    <!-- Left: Mobile Menu Toggle & Title or Search -->
+    <!-- Left: Mobile Menu Toggle & Search -->
     <div class="flex items-center gap-4 flex-1 max-w-xl">
       <button
         @click="$emit('toggle-mobile-menu')"
@@ -20,7 +20,7 @@
           type="text"
           v-model="tracksStore.searchQuery"
           @input="onSearchInput"
-          placeholder="Search by title, artist, or album..."
+          :placeholder="i18n.t('nav.searchPlaceholder')"
           class="w-full bg-studio-elevated border border-studio-border rounded-lg pl-9 pr-8 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all font-sans"
         />
         <button
@@ -43,7 +43,7 @@
       >
         <div class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></div>
         <span class="font-mono font-medium truncate max-w-[140px]">
-          {{ syncStore.progress.current_track_title || 'Syncing...' }}
+          {{ syncStore.progress.current_track_title || i18n.t('nav.syncing') }}
         </span>
         <span class="font-mono text-[10px] bg-emerald-900/90 text-emerald-200 px-1.5 py-0.5 rounded">
           {{ Math.round(syncStore.progress.percentage) }}%
@@ -57,7 +57,7 @@
         </svg>
         <span>{{ formatBytes(tracksStore.stats.total_storage_size) }}</span>
         <span class="text-zinc-600">•</span>
-        <span>{{ tracksStore.stats.total_tracks }} tracks</span>
+        <span>{{ tracksStore.stats.total_tracks }} {{ i18n.t('nav.tracks') }}</span>
       </div>
     </div>
   </header>
@@ -66,11 +66,13 @@
 <script setup>
 import { useTracksStore } from '../stores/tracks'
 import { useSyncStore } from '../stores/sync'
+import { useI18nStore } from '../stores/i18n'
 
 defineEmits(['toggle-mobile-menu', 'open-sync'])
 
 const tracksStore = useTracksStore()
 const syncStore = useSyncStore()
+const i18n = useI18nStore()
 
 let debounceTimeout = null
 function onSearchInput() {
@@ -93,4 +95,3 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 </script>
-

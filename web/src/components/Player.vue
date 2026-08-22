@@ -222,6 +222,18 @@
           class="w-16 md:w-20"
         />
       </div>
+
+      <!-- Close Player Button -->
+      <button
+        @click="closePlayer"
+        class="text-zinc-500 hover:text-zinc-200 transition-colors p-1.5 rounded-lg hover:bg-studio-hover ml-1"
+        title="Close Player"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+
     </div>
   </div>
 </template>
@@ -256,6 +268,12 @@ function formatTime(secs) {
 
 function onImageError(e) {
   e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="%236366f1" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
+}
+
+function closePlayer() {
+  playerStore.pause()
+  playerStore.currentTrack = null
+  playerStore.queue = []
 }
 </script>
 

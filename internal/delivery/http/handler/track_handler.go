@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -62,7 +63,7 @@ func (h *TrackHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	track, err := h.trackUsecase.GetByID(id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "track not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Трек не найден"})
 		return
 	}
 	writeJSON(w, http.StatusOK, track)
@@ -83,5 +84,27 @@ func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "track deleted"})
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Трек успешно удален"})
+}
+
+type batchDeleteRequest struct {
+	IDs []string `json:"ids"`
+}
+
+func (h *TrackHandler) BatchDelete(w http.ResponseWriter, r *http.Request) {
+	var req batchDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.IDs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Необходимо указать список идентификаторов треков"})
+		return
+	}
+
+	if err := h.trackUsecase.BatchDelete(req.IDs); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"deleted": len(req.IDs),
+	})
 }

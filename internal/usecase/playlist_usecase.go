@@ -40,19 +40,25 @@ type CreatePlaylistRequest struct {
 func (u *PlaylistUsecase) Create(userID string, req CreatePlaylistRequest) (*domain.Playlist, error) {
 	cleanInput := strings.TrimSpace(req.YouTubeURLOrID)
 	if cleanInput == "" {
-		return nil, errors.New("youtube playlist URL or ID is required")
+		return nil, errors.New("Необходимо указать ссылку на плейлист или его ID")
 	}
+
+	normalizedInput := ytdlp.NormalizePlaylistURL(cleanInput)
 
 	// Check if already registered
 	existing, _ := u.playlistRepo.GetByYouTubeID(cleanInput)
 	if existing != nil {
-		return nil, domain.ErrAlreadyExists
+		return nil, errors.New("Этот плейлист уже добавлен в список ваших подписок")
+	}
+	existingNorm, _ := u.playlistRepo.GetByYouTubeID(normalizedInput)
+	if existingNorm != nil {
+		return nil, errors.New("Этот плейлист уже добавлен в список ваших подписок")
 	}
 
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		if cleanInput == "LM" || cleanInput == "liked" {
-			title = "Liked Music"
+			title = "Понравившиеся"
 		} else {
 			// Try to fetch title quickly
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

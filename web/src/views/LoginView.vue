@@ -1,70 +1,94 @@
 <template>
-  <div class="min-h-screen bg-[#070709] flex items-center justify-center p-4 select-none relative overflow-hidden">
-    <!-- Ambient subtle background glow -->
-    <div class="absolute -top-40 left-1/2 -translate-x-1/2 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
-
+  <div class="min-h-screen bg-studio-bg flex items-center justify-center p-4 select-none relative overflow-hidden">
     <div class="w-full max-w-sm relative z-10">
       <!-- Brand Logo & Title -->
       <div class="text-center mb-8">
-        <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 mb-3 shadow-inner">
-          <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M12 2v20M17 5v14M22 8v8M7 8v8M2 11v2" stroke-linecap="round"/>
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-studio-surface border border-studio-border text-indigo-400 mb-3.5 shadow-md">
+          <!-- Bespoke Modern Studio Soundwave Logo -->
+          <svg class="w-8 h-8" viewBox="0 0 32 32" fill="none">
+            <rect x="4" y="12" width="2.5" height="8" rx="1.25" fill="currentColor" opacity="0.6"/>
+            <rect x="9.5" y="8" width="2.5" height="16" rx="1.25" fill="currentColor" opacity="0.8"/>
+            <rect x="15" y="4" width="2.5" height="24" rx="1.25" fill="#818cf8"/>
+            <rect x="20.5" y="8" width="2.5" height="16" rx="1.25" fill="currentColor" opacity="0.8"/>
+            <rect x="26" y="12" width="2.5" height="8" rx="1.25" fill="currentColor" opacity="0.6"/>
           </svg>
         </div>
         <h1 class="text-xl font-bold tracking-tight text-zinc-100">SyncWave</h1>
-        <p class="text-xs text-zinc-400 mt-1">Self-Hosted Music Archive & Streamer</p>
+        <p class="text-xs text-zinc-400 mt-1">{{ i18n.t('auth.subtitle') }}</p>
       </div>
 
       <!-- Auth Card -->
-      <div class="bg-studio-surface border border-studio-border rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
+      <div class="bg-studio-surface border border-studio-border rounded-2xl p-6 sm:p-8 shadow-xl space-y-6">
         <div>
           <h2 class="text-base font-semibold text-zinc-100">
-            {{ authStore.needsSetup ? 'Initialize Admin' : 'Welcome Back' }}
+            {{ authStore.needsSetup ? i18n.t('auth.initAdmin') : i18n.t('auth.welcomeBack') }}
           </h2>
           <p class="text-xs text-zinc-400 mt-0.5">
-            {{ authStore.needsSetup ? 'Create your primary administrator credentials' : 'Sign in to access your music library' }}
+            {{ authStore.needsSetup ? i18n.t('auth.initAdminPrompt') : i18n.t('auth.signInPrompt') }}
           </p>
         </div>
 
         <form @submit.prevent="handleSubmit" class="space-y-4">
           <div>
-            <label class="block text-xs font-medium text-zinc-300 mb-1.5">Username</label>
+            <label class="block text-xs font-medium text-zinc-300 mb-1.5">{{ i18n.t('auth.username') }}</label>
             <input
               type="text"
               v-model="username"
               required
               autocomplete="username"
-              placeholder="e.g. admin"
+              :placeholder="i18n.t('auth.usernamePlaceholder')"
               class="w-full bg-studio-elevated border border-studio-border rounded-lg px-3.5 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/60"
             />
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-zinc-300 mb-1.5">Password</label>
-            <input
-              type="password"
-              v-model="password"
-              required
-              autocomplete="current-password"
-              placeholder="••••••••"
-              class="w-full bg-studio-elevated border border-studio-border rounded-lg px-3.5 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/60"
-            />
+            <label class="block text-xs font-medium text-zinc-300 mb-1.5">{{ i18n.t('auth.password') }}</label>
+            <div class="relative">
+              <input
+                :type="showPassword ? 'text' : 'password'"
+                v-model="password"
+                required
+                autocomplete="current-password"
+                placeholder="••••••••"
+                class="w-full bg-studio-elevated border border-studio-border rounded-lg pl-3.5 pr-10 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/60"
+              />
+              <button
+                type="button"
+                @click="showPassword = !showPassword"
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-1 transition-colors"
+                :title="showPassword ? i18n.t('auth.hidePassword') : i18n.t('auth.showPassword')"
+              >
+                <!-- Eye open -->
+                <svg v-if="!showPassword" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <!-- Eye closed -->
+                <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+                  <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+                  <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+                  <line x1="2" y1="2" x2="22" y2="22"/>
+                </svg>
+              </button>
+            </div>
           </div>
 
+          <!-- Solid, Clean Button (Zero Gradient) -->
           <button
             type="submit"
             :disabled="authStore.loading"
-            class="w-full py-2.5 px-4 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-lg shadow-indigo-600/20 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+            class="w-full py-2.5 px-4 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-sm active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
           >
             <span v-if="authStore.loading" class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-            <span>{{ authStore.needsSetup ? 'Create Admin & Start' : 'Sign In' }}</span>
+            <span>{{ authStore.needsSetup ? i18n.t('auth.createAdminButton') : i18n.t('auth.signInButton') }}</span>
           </button>
         </form>
       </div>
 
-      <!-- Footer Info -->
-      <div class="text-center mt-6 text-[11px] font-mono text-zinc-600">
-        SyncWave Daemon • Zero Cloud Lock-in
+      <!-- Professional Slogan / Footer -->
+      <div class="text-center mt-6 text-xs text-zinc-400 select-none">
+        {{ i18n.t('auth.slogan') }}
       </div>
     </div>
   </div>
@@ -73,13 +97,16 @@
 <script setup>
 import { ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
+import { useI18nStore } from '../stores/i18n'
 import { useToastStore } from '../stores/toast'
 
 const authStore = useAuthStore()
+const i18n = useI18nStore()
 const toast = useToastStore()
 
 const username = ref('')
 const password = ref('')
+const showPassword = ref(false)
 
 async function handleSubmit() {
   if (!username.value || !password.value) return
@@ -87,14 +114,13 @@ async function handleSubmit() {
   try {
     if (authStore.needsSetup) {
       await authStore.setupAdmin(username.value, password.value)
-      toast.success('Admin account created successfully!')
+      toast.success('Администратор успешно создан!')
     } else {
       await authStore.login(username.value, password.value)
-      toast.success('Welcome back!')
+      toast.success('Добро пожаловать в SyncWave!')
     }
   } catch (e) {
-    toast.error(e.message || 'Authentication failed')
+    toast.error(e.message || 'Ошибка авторизации')
   }
 }
 </script>
-

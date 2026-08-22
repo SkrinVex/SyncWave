@@ -1,0 +1,9 @@
+data/
+.git/
+.github/
+web/node_modules/
+syncwave
+*.db
+*.db-wal
+*.db-shm
+
