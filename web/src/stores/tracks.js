@@ -35,7 +35,10 @@ export const useTracksStore = defineStore('tracks', () => {
   function getTrackCoverUrl(track) {
     if (!track) return ''
     const t = authStore.token
-    return `/api/v1/tracks/${track.id}/cover${t ? `?token=${encodeURIComponent(t)}` : ''}`
+    const tokenParam = t ? `token=${encodeURIComponent(t)}` : ''
+    const timestampParam = track.updated_at ? `t=${new Date(track.updated_at).getTime()}` : ''
+    const qs = [tokenParam, timestampParam].filter(Boolean).join('&')
+    return `/api/v1/tracks/${track.id}/cover${qs ? '?' + qs : ''}`
   }
 
   function getTrackDownloadUrl(track) {

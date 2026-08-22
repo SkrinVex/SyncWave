@@ -75,11 +75,11 @@
           <div class="mt-3 flex items-center gap-3 max-w-md">
             <div class="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden border border-zinc-700/60">
               <div
-                class="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full transition-all duration-150"
+                class="h-full bg-indigo-500 rounded-full transition-all duration-150"
                 :style="{ width: `${Math.max(syncStore.progress.track_percentage || 0, 1)}%` }"
               ></div>
             </div>
-            <span class="text-xs font-mono font-bold text-emerald-400 tabular-nums shrink-0">
+            <span class="text-xs font-mono font-bold text-indigo-400 tabular-nums shrink-0">
               {{ Math.round(syncStore.progress.track_percentage || 0) }}%
             </span>
           </div>

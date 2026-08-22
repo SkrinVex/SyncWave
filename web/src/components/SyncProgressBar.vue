@@ -40,12 +40,12 @@
         <div class="flex items-center gap-2">
           <div class="w-20 sm:w-32 h-1.5 bg-zinc-800 rounded-full overflow-hidden border border-zinc-700/50">
             <div
-              class="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full transition-all duration-150"
+              class="h-full bg-indigo-500 rounded-full transition-all duration-150"
               :style="{ width: `${Math.max(syncStore.progress.track_percentage || 0, 2)}%` }"
             ></div>
           </div>
 
-          <span class="text-emerald-400 font-bold text-[11px] tabular-nums w-9 text-right">
+          <span class="text-indigo-400 font-bold text-[11px] tabular-nums w-9 text-right">
             {{ Math.round(syncStore.progress.track_percentage || 0) }}%
           </span>
         </div>
