@@ -169,7 +169,7 @@
       <!-- Download Button -->
       <a
         :href="tracksStore.getTrackDownloadUrl(playerStore.currentTrack)"
-        download
+        :download="`${playerStore.currentTrack?.artist || 'Artist'} - ${playerStore.currentTrack?.title || 'Track'}.${playerStore.currentTrack?.format || 'opus'}`"
         title="Download Audio File"
         class="text-zinc-400 hover:text-zinc-100 transition-colors p-1.5 rounded-lg hover:bg-studio-hover hidden sm:block"
       >

@@ -3,8 +3,11 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/syncwave/syncwave/internal/usecase"
@@ -142,6 +145,34 @@ func (h *StreamHandler) DownloadAudio(w http.ResponseWriter, r *http.Request) {
 	filePath := track.FilePath
 	file, err := os.Open(filePath)
 	if err != nil {
+		dir := filepath.Dir(filePath)
+		baseName := track.YouTubeID
+		if baseName != "" {
+			validExts := map[string]bool{
+				".opus": true, ".m4a": true, ".mp3": true,
+				".flac": true, ".webm": true, ".ogg": true,
+				".aac": true, ".mp4": true, ".wav": true,
+			}
+			matches, _ := filepath.Glob(filepath.Join(dir, fmt.Sprintf("%s.*", baseName)))
+			for _, m := range matches {
+				ext := filepath.Ext(m)
+				if validExts[ext] {
+					if altFile, altErr := os.Open(m); altErr == nil {
+						if fi, fiErr := altFile.Stat(); fiErr == nil && fi.Size() > 1024 {
+							file = altFile
+							filePath = m
+							err = nil
+							break
+						} else {
+							altFile.Close()
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if err != nil {
 		http.Error(w, "audio file not found", http.StatusNotFound)
 		return
 	}
@@ -153,10 +184,59 @@ func (h *StreamHandler) DownloadAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename := fmt.Sprintf("%s - %s%s", track.Artist, track.Title, filepath.Ext(filePath))
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
+	ext := filepath.Ext(filePath)
+	contentType := "audio/ogg"
+	switch ext {
+	case ".opus":
+		contentType = "audio/ogg; codecs=opus"
+	case ".ogg":
+		contentType = "audio/ogg"
+	case ".m4a", ".mp4", ".aac":
+		contentType = "audio/mp4"
+	case ".mp3":
+		contentType = "audio/mpeg"
+	case ".flac":
+		contentType = "audio/flac"
+	case ".webm":
+		contentType = "audio/webm"
+	case ".wav":
+		contentType = "audio/wav"
+	}
 
-	http.ServeContent(w, r, filename, stat.ModTime(), file)
+	artist := track.Artist
+	if artist == "" {
+		artist = "Unknown Artist"
+	}
+	title := track.Title
+	if title == "" {
+		title = track.YouTubeID
+	}
+
+	rawFilename := fmt.Sprintf("%s - %s%s", artist, title, ext)
+	// Remove filesystem reserved characters
+	rawFilename = strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' {
+			return '_'
+		}
+		return r
+	}, rawFilename)
+
+	// ASCII fallback: strip non-ASCII for legacy headers
+	asciiFallback := strings.Map(func(r rune) rune {
+		if r > 127 || r < 32 || r == '"' || r == '\\' {
+			return '_'
+		}
+		return r
+	}, rawFilename)
+	if strings.TrimSpace(strings.ReplaceAll(asciiFallback, "_", "")) == "" {
+		asciiFallback = fmt.Sprintf("track_%s%s", track.YouTubeID, ext)
+	}
+
+	utf8Filename := url.PathEscape(rawFilename)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiFallback, utf8Filename))
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
+	w.Header().Set("Accept-Ranges", "bytes")
+
+	http.ServeContent(w, r, rawFilename, stat.ModTime(), file)
 }

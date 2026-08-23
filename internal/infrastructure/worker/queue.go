@@ -216,15 +216,18 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		q.eventHub.Broadcast(EventMessage{Type: EventTypePlaylist, Data: playlist})
 
 		if isAuth, reason := ytdlp.IsYTDLPAuthError(err.Error()); isAuth || strings.Contains(err.Error(), "авторизация") {
-			q.eventHub.Broadcast(EventMessage{
-				Type: EventTypeCookieStatus,
-				Data: map[string]interface{}{
-					"status":       "expired",
-					"is_valid":     false,
-					"has_cookies":  true,
-					"error_reason": reason,
-				},
-			})
+			valRes := q.ytdlpClient.ValidateUserCookies(playlist.UserID)
+			if valRes == nil || !valRes.IsValid || valRes.Status == ytdlp.CookieStatusExpired {
+				q.eventHub.Broadcast(EventMessage{
+					Type: EventTypeCookieStatus,
+					Data: map[string]interface{}{
+						"status":       "expired",
+						"is_valid":     false,
+						"has_cookies":  true,
+						"error_reason": reason,
+					},
+				})
+			}
 		}
 		return
 	}
@@ -402,19 +405,41 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			_ = q.trackRepo.Delete(initialTrack.ID, playlist.UserID)
 
 			errMsg := dlErr.Error()
-			if isAuth, reason := ytdlp.IsYTDLPAuthError(errMsg); isAuth || strings.Contains(errMsg, "авторизация") {
-				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека %s: %s", trackTitle, reason))
-				q.eventHub.Broadcast(EventMessage{
-					Type: EventTypeCookieStatus,
-					Data: map[string]interface{}{
-						"status":       "expired",
-						"is_valid":     false,
-						"has_cookies":  true,
-						"error_reason": reason,
-					},
+			isUnavailable := strings.Contains(errMsg, "removed") ||
+				strings.Contains(errMsg, "terminated") ||
+				strings.Contains(errMsg, "hate speech") ||
+				strings.Contains(errMsg, "copyright") ||
+				strings.Contains(errMsg, "no longer available") ||
+				strings.Contains(errMsg, "Video unavailable") ||
+				strings.Contains(errMsg, "Private video") ||
+				strings.Contains(errMsg, "Join this channel") ||
+				strings.Contains(errMsg, "members-only") ||
+				strings.Contains(errMsg, "blocked")
+
+			if isUnavailable {
+				// Automatically save into user's blacklist so future syncs skip this track instantly!
+				_ = q.blacklistRepo.Add(&domain.BlacklistItem{
+					YouTubeID: entry.GetID(),
+					UserID:    playlist.UserID,
+					Title:     trackTitle,
+					Artist:    entry.Artist,
 				})
-			} else if strings.Contains(errMsg, "removed") || strings.Contains(errMsg, "terminated") || strings.Contains(errMsg, "hate speech") || strings.Contains(errMsg, "copyright") || strings.Contains(errMsg, "no longer available") {
-				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен недоступный на YouTube трек [%s]: удален правообладателем или заблокирован платформой", trackTitle))
+				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен недоступный на YouTube трек [%s] (%s): сохранен и больше не будет запрашиваться", trackTitle, entry.GetID()))
+			} else if isAuth, reason := ytdlp.IsYTDLPAuthError(errMsg); isAuth || strings.Contains(errMsg, "авторизация") {
+				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека %s: %s", trackTitle, reason))
+				// Only broadcast cookie status if cookies on disk are genuinely expired/invalid
+				valRes := q.ytdlpClient.ValidateUserCookies(playlist.UserID)
+				if valRes == nil || !valRes.IsValid || valRes.Status == ytdlp.CookieStatusExpired {
+					q.eventHub.Broadcast(EventMessage{
+						Type: EventTypeCookieStatus,
+						Data: map[string]interface{}{
+							"status":       "expired",
+							"is_valid":     false,
+							"has_cookies":  true,
+							"error_reason": reason,
+						},
+					})
+				}
 			} else {
 				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка загрузки %s: %v", trackTitle, dlErr))
 			}

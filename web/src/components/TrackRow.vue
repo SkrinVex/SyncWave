@@ -107,7 +107,7 @@
       </button>
       <a
         :href="tracksStore.getTrackDownloadUrl(track)"
-        download
+        :download="`${track.artist || 'Artist'} - ${track.title || 'Track'}.${track.format || 'opus'}`"
         @click.stop
         title="Download Audio File"
         class="p-1 hover:text-zinc-100 hover:bg-studio-hover rounded transition-colors"

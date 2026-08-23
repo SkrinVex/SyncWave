@@ -248,7 +248,7 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 	args = append(args,
 		"--geo-bypass",
 		"--geo-bypass-country", "US",
-		"--extractor-args", "youtube:player_client=web,mweb,android",
+		"--extractor-args", "youtube:player_client=android_music,android,mweb,ios",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
@@ -280,7 +280,8 @@ func (c *Client) FetchFlatPlaylistForUser(ctx context.Context, urlOrID string, u
 	args = append(args,
 		"--flat-playlist",
 		"--dump-single-json",
-		"--no-playlist-reverse",
+		"--no-warnings",
+		"--ignore-errors",
 		targetURL,
 	)
 
@@ -290,22 +291,19 @@ func (c *Client) FetchFlatPlaylistForUser(ctx context.Context, urlOrID string, u
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		stdErrStr := stderr.String()
-		if isAuth, reason := IsYTDLPAuthError(stdErrStr); isAuth {
-			return nil, fmt.Errorf("Требуется авторизация YouTube: %s", reason)
+		errStr := stderr.String()
+		if isAuth, reason := IsYTDLPAuthError(errStr); isAuth {
+			return nil, fmt.Errorf("ошибка авторизации: %s", reason)
 		}
-		if strings.Contains(stdErrStr, "429") {
-			return nil, fmt.Errorf("Лимит запросов YouTube (HTTP 429). Настройте прокси в Настройках: %s", stdErrStr)
-		}
-		return nil, fmt.Errorf("yt-dlp flat playlist error: %w (stderr: %s)", err, stdErrStr)
+		return nil, fmt.Errorf("yt-dlp flat playlist error: %w (%s)", err, strings.TrimSpace(errStr))
 	}
 
-	var flatOutput FlatPlaylistOutput
-	if err := json.Unmarshal(stdout.Bytes(), &flatOutput); err != nil {
+	var output FlatPlaylistOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		return nil, fmt.Errorf("failed to parse playlist json: %w", err)
 	}
 
-	return &flatOutput, nil
+	return &output, nil
 }
 
 type DownloadResult struct {
@@ -349,7 +347,7 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--newline",
 		"--geo-bypass",
 		"--geo-bypass-country", "US",
-		"--extractor-args", "youtube:player_client=web,mweb,android",
+		"--extractor-args", "youtube:player_client=android_music,android,mweb,ios",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
@@ -358,6 +356,7 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--extract-audio",
 		"--audio-format", format,
 		"--audio-quality", "0",
+		"--postprocessor-args", "ffmpeg:-movflags +faststart",
 		"--write-thumbnail",
 		"--convert-thumbnails", "jpg",
 		"--embed-metadata",
@@ -406,6 +405,26 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 			return res, nil
 		}
 		err = err2
+	}
+
+	// Attempt 3: If direct video ID failed (e.g. removed/blocked) but title is known, search alternative
+	if trackCtx.Err() == nil && title != "" && title != youtubeID {
+		searchQuery := title
+		if artist != "" && artist != "Unknown Artist" && !strings.Contains(strings.ToLower(title), strings.ToLower(artist)) {
+			searchQuery = fmt.Sprintf("%s %s audio", artist, title)
+		}
+		searchURL := fmt.Sprintf("ytsearch1:%s", searchQuery)
+		res3, err3 := c.executeDownloadForUser(trackCtx, youtubeID, searchURL, outTemplate, format, userID, false, onProgress)
+		if err3 == nil {
+			res3.ID = youtubeID
+			if res3.Title == "" || res3.Title == "Unknown Title" {
+				res3.Title = title
+			}
+			if res3.Artist == "" || res3.Artist == "Unknown Artist" {
+				res3.Artist = artist
+			}
+			return res3, nil
+		}
 	}
 
 	return nil, err
