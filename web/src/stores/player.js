@@ -8,7 +8,7 @@ export const usePlayerStore = defineStore('player', () => {
   const toast = useToastStore()
 
   const audio = new Audio()
-  audio.preload = 'auto'
+  audio.preload = 'metadata'
 
   const currentTrack = ref(null)
   const isPlaying = ref(false)

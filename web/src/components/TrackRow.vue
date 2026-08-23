@@ -158,9 +158,14 @@ const isCurrentTrack = computed(() => playerStore.currentTrack?.id === props.tra
 const isCurrentPlaying = computed(() => isCurrentTrack.value && playerStore.isPlaying)
 
 function formatDuration(secs) {
-  if (!secs) return '0:00'
-  const m = Math.floor(secs / 60)
-  const s = Math.floor(secs % 60)
+  if (!secs || isNaN(secs)) return '0:00'
+  const totalSecs = Math.floor(secs)
+  const h = Math.floor(totalSecs / 3600)
+  const m = Math.floor((totalSecs % 3600) / 60)
+  const s = totalSecs % 60
+  if (h > 0) {
+    return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`
+  }
   return `${m}:${s < 10 ? '0' : ''}${s}`
 }
 

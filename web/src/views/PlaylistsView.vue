@@ -108,7 +108,7 @@
         <!-- Action Footer -->
         <div class="flex items-center justify-between gap-2 pt-2 border-t border-studio-borderSubtle">
           <span class="text-[11px] text-zinc-400 font-mono">
-            {{ pl.auto_sync ? `${i18n.t('playlists.every')} ${pl.sync_interval_minutes}${i18n.t('playlists.min')}` : i18n.t('playlists.manualOnly') }}
+            {{ pl.auto_sync ? formatSyncInterval(pl.sync_interval_minutes) : i18n.t('playlists.manualOnly') }}
           </span>
 
           <div class="flex items-center gap-2">
@@ -195,6 +195,24 @@ async function confirmDeletePlaylist() {
   } else {
     toast.error('Не удалось удалить плейлист')
   }
+}
+
+function formatSyncInterval(mins) {
+  if (!mins) return ''
+  if (mins % 1440 === 0) {
+    const d = mins / 1440
+    return `${i18n.t('playlists.every')} ${d} ${i18n.t('playlists.days')}`
+  }
+  if (mins % 60 === 0) {
+    const h = mins / 60
+    return `${i18n.t('playlists.every')} ${h} ${i18n.t('playlists.hours')}`
+  }
+  if (mins > 60) {
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return `${i18n.t('playlists.every')} ${h} ${i18n.t('playlists.hours')} ${m} ${i18n.t('playlists.min')}`
+  }
+  return `${i18n.t('playlists.every')} ${mins} ${i18n.t('playlists.min')}`
 }
 
 function formatTimeAgo(dateStr) {
