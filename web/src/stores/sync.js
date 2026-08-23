@@ -62,6 +62,9 @@ export const useSyncStore = defineStore('sync', () => {
           playlistsStore.fetchPlaylists()
         } else if (payload.type === 'cookie_status') {
           if (payload.data) {
+            if (payload.data.user_id && authStore.user?.id && payload.data.user_id !== authStore.user.id) {
+              return
+            }
             settingsStore.settings.cookies_status = payload.data.status || 'expired'
             settingsStore.settings.cookies_valid = payload.data.is_valid || false
             settingsStore.settings.cookies_error = payload.data.error_reason || ''

@@ -231,24 +231,27 @@ func (c *Client) GetUserCookiesPath(userID string) string {
 		if info, err := os.Stat(userPath); err == nil && info.Size() > 0 {
 			return userPath
 		}
-	}
-	if info, err := os.Stat(c.cookiesPath); err == nil && info.Size() > 0 {
-		return c.cookiesPath
+		return userPath
 	}
 	return c.cookiesPath
 }
 
 func (c *Client) HasUserCookies(userID string) bool {
-	path := c.GetUserCookiesPath(userID)
-	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
-		return true
+	if userID == "" {
+		info, err := os.Stat(c.cookiesPath)
+		return err == nil && info.Size() > 0
 	}
-	return false
+	userPath := filepath.Join(filepath.Dir(c.cookiesPath), "cookies", fmt.Sprintf("cookies_%s.txt", userID))
+	info, err := os.Stat(userPath)
+	return err == nil && info.Size() > 0
 }
 
 func (c *Client) GetUserCookiesModTime(userID string) (string, bool) {
-	path := c.GetUserCookiesPath(userID)
-	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+	if userID == "" {
+		return c.GetCookiesModTime()
+	}
+	userPath := filepath.Join(filepath.Dir(c.cookiesPath), "cookies", fmt.Sprintf("cookies_%s.txt", userID))
+	if info, err := os.Stat(userPath); err == nil && info.Size() > 0 {
 		return info.ModTime().Format(time.RFC3339), true
 	}
 	return "", false
@@ -268,7 +271,7 @@ func (c *Client) SaveUserCookies(userID string, content []byte) error {
 func (c *Client) DeleteUserCookies(userID string) error {
 	if userID != "" {
 		path := filepath.Join(filepath.Dir(c.cookiesPath), "cookies", fmt.Sprintf("cookies_%s.txt", userID))
-		_ = os.Remove(path)
+		return os.Remove(path)
 	}
 	return os.Remove(c.cookiesPath)
 }
@@ -292,8 +295,19 @@ func (c *Client) SaveCookies(content []byte) error {
 }
 
 func (c *Client) ValidateUserCookies(userID string) *CookieValidationResult {
-	path := c.GetUserCookiesPath(userID)
-	return ValidateCookieFile(path)
+	if userID == "" {
+		return ValidateCookieFile(c.cookiesPath)
+	}
+	userPath := filepath.Join(filepath.Dir(c.cookiesPath), "cookies", fmt.Sprintf("cookies_%s.txt", userID))
+	if info, err := os.Stat(userPath); err != nil || info.Size() == 0 {
+		return &CookieValidationResult{
+			HasCookies:  false,
+			IsValid:     false,
+			Status:      CookieStatusMissing,
+			ErrorReason: "Файл cookies не загружен",
+		}
+	}
+	return ValidateCookieFile(userPath)
 }
 
 func (c *Client) buildBaseArgsForUser(userID string) []string {

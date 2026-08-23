@@ -36,22 +36,25 @@ func (h *SyncHandler) TriggerAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SyncHandler) Cancel(w http.ResponseWriter, r *http.Request) {
-	h.syncUsecase.CancelSync()
+	userID, _ := r.Context().Value("user_id").(string)
+	h.syncUsecase.CancelSync(userID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Синхронизация отменена"})
 }
 
 func (h *SyncHandler) GetProgress(w http.ResponseWriter, r *http.Request) {
-	progress := h.syncUsecase.GetProgress()
+	userID, _ := r.Context().Value("user_id").(string)
+	progress := h.syncUsecase.GetProgress(userID)
 	writeJSON(w, http.StatusOK, progress)
 }
 
 func (h *SyncHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 {
 		limit = 100
 	}
 
-	logs, err := h.syncUsecase.GetLogs(limit)
+	logs, err := h.syncUsecase.GetLogs(limit, userID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -61,13 +64,14 @@ func (h *SyncHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SyncHandler) ClearLogs(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	daysStr := r.URL.Query().Get("days")
 	days := 0
 	if daysStr != "" {
 		days, _ = strconv.Atoi(daysStr)
 	}
 
-	if err := h.syncUsecase.ClearLogs(days); err != nil {
+	if err := h.syncUsecase.ClearLogs(days, userID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

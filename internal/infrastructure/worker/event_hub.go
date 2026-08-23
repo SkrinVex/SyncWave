@@ -26,21 +26,21 @@ type EventMessage struct {
 }
 
 type EventHub struct {
-	clients map[chan EventMessage]bool
+	clients map[chan EventMessage]string
 	mu      sync.RWMutex
 }
 
 func NewEventHub() *EventHub {
 	return &EventHub{
-		clients: make(map[chan EventMessage]bool),
+		clients: make(map[chan EventMessage]string),
 	}
 }
 
-func (h *EventHub) Subscribe() chan EventMessage {
+func (h *EventHub) Subscribe(userID string) chan EventMessage {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	ch := make(chan EventMessage, 128)
-	h.clients[ch] = true
+	h.clients[ch] = userID
 	return ch
 }
 
@@ -61,20 +61,33 @@ func (h *EventHub) Broadcast(msg EventMessage) {
 		select {
 		case ch <- msg:
 		default:
-			// Non-blocking drop if consumer is stuck
 		}
 	}
 }
 
-func (h *EventHub) BroadcastProgress(progress domain.SyncProgress) {
-	h.Broadcast(EventMessage{
+func (h *EventHub) BroadcastUser(userID string, msg EventMessage) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for ch, clientUserID := range h.clients {
+		if userID == "" || clientUserID == "" || clientUserID == userID {
+			select {
+			case ch <- msg:
+			default:
+			}
+		}
+	}
+}
+
+func (h *EventHub) BroadcastProgress(userID string, progress domain.SyncProgress) {
+	h.BroadcastUser(userID, EventMessage{
 		Type: EventTypeProgress,
 		Data: progress,
 	})
 }
 
-func (h *EventHub) BroadcastLog(log domain.SyncLog) {
-	h.Broadcast(EventMessage{
+func (h *EventHub) BroadcastLog(userID string, log domain.SyncLog) {
+	h.BroadcastUser(userID, EventMessage{
 		Type: EventTypeLog,
 		Data: log,
 	})
@@ -98,7 +111,9 @@ func (h *EventHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	ch := h.Subscribe()
+	userID, _ := r.Context().Value("user_id").(string)
+
+	ch := h.Subscribe(userID)
 	defer h.Unsubscribe(ch)
 
 	// Send initial connected payload

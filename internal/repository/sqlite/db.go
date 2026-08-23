@@ -104,6 +104,7 @@ func (db *DB) Migrate() error {
 
 	CREATE TABLE IF NOT EXISTS sync_logs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id TEXT NOT NULL DEFAULT '',
 		playlist_id TEXT,
 		track_id TEXT,
 		level TEXT NOT NULL,
@@ -111,6 +112,7 @@ func (db *DB) Migrate() error {
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE INDEX IF NOT EXISTS idx_sync_logs_user_id ON sync_logs(user_id);
 	CREATE INDEX IF NOT EXISTS idx_sync_logs_created_at ON sync_logs(created_at DESC);
 
 	CREATE TABLE IF NOT EXISTS blacklist (
@@ -133,16 +135,23 @@ func (db *DB) Migrate() error {
 	_, _ = db.Exec("ALTER TABLE users ADD COLUMN storage_quota_bytes INTEGER NOT NULL DEFAULT 10737418240;")
 	_, _ = db.Exec("ALTER TABLE tracks ADD COLUMN user_id TEXT;")
 	_, _ = db.Exec("ALTER TABLE blacklist ADD COLUMN user_id TEXT NOT NULL DEFAULT '';")
+	_, _ = db.Exec("ALTER TABLE sync_logs ADD COLUMN user_id TEXT NOT NULL DEFAULT '';")
 
 	// 2. Safe index creations after columns are guaranteed to exist
 	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_tracks_user_id ON tracks(user_id);")
 	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_tracks_user_yt ON tracks(user_id, youtube_id);")
 	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_blacklist_user_id ON blacklist(user_id);")
+	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_sync_logs_user_id ON sync_logs(user_id);")
 
-	// 3. Populate tracks.user_id from parent playlists if empty
+	// 3. Populate user_id from parent playlists if empty
 	_, _ = db.Exec(`
 		UPDATE tracks 
 		SET user_id = (SELECT user_id FROM playlists WHERE playlists.id = tracks.playlist_id)
+		WHERE (user_id IS NULL OR user_id = '') AND playlist_id IS NOT NULL;
+	`)
+	_, _ = db.Exec(`
+		UPDATE sync_logs 
+		SET user_id = (SELECT user_id FROM playlists WHERE playlists.id = sync_logs.playlist_id)
 		WHERE (user_id IS NULL OR user_id = '') AND playlist_id IS NOT NULL;
 	`)
 

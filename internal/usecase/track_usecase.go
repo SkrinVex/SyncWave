@@ -256,7 +256,7 @@ func (u *TrackUsecase) UploadTracks(ctx context.Context, userID string, playlist
 		}
 
 		if u.eventHub != nil {
-			u.eventHub.Broadcast(worker.EventMessage{
+			u.eventHub.BroadcastUser(userID, worker.EventMessage{
 				Type: worker.EventTypeTrack,
 				Data: track,
 			})

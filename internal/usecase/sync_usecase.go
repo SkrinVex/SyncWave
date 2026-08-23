@@ -39,18 +39,21 @@ func (u *SyncUsecase) TriggerSyncPlaylist(playlistID string) error {
 	return u.workerQueue.Enqueue(playlistID, true)
 }
 
-func (u *SyncUsecase) CancelSync() {
-	u.workerQueue.CancelCurrent()
+func (u *SyncUsecase) CancelSync(userID string) {
+	u.workerQueue.CancelCurrent(userID)
 }
 
-func (u *SyncUsecase) GetProgress() domain.SyncProgress {
-	return u.workerQueue.GetCurrentProgress()
+func (u *SyncUsecase) GetProgress(userID string) domain.SyncProgress {
+	return u.workerQueue.GetCurrentProgress(userID)
 }
 
-func (u *SyncUsecase) GetLogs(limit int) ([]domain.SyncLog, error) {
-	return u.logRepo.ListRecent(limit)
+func (u *SyncUsecase) GetLogs(limit int, userID string) ([]domain.SyncLog, error) {
+	return u.logRepo.ListRecent(limit, userID)
 }
 
-func (u *SyncUsecase) ClearLogs(days int) error {
-	return u.logRepo.ClearAll()
+func (u *SyncUsecase) ClearLogs(days int, userID string) error {
+	if days > 0 {
+		return u.logRepo.ClearOlderThan(days, userID)
+	}
+	return u.logRepo.ClearAll(userID)
 }

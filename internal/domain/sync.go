@@ -13,6 +13,7 @@ const (
 
 type SyncLog struct {
 	ID         int64     `json:"id"`
+	UserID     string    `json:"user_id,omitempty"`
 	PlaylistID *string   `json:"playlist_id,omitempty"`
 	TrackID    *string   `json:"track_id,omitempty"`
 	Level      LogLevel  `json:"level"`
@@ -22,6 +23,7 @@ type SyncLog struct {
 
 type SyncProgress struct {
 	Active            bool    `json:"active"`
+	UserID            string  `json:"user_id,omitempty"`
 	PlaylistID        string  `json:"playlist_id"`
 	PlaylistTitle     string  `json:"playlist_title"`
 	CurrentTrackIndex int     `json:"current_track_index"`
@@ -37,7 +39,7 @@ type SyncProgress struct {
 
 type SyncLogRepository interface {
 	Create(log *SyncLog) error
-	ListRecent(limit int) ([]SyncLog, error)
-	ClearOlderThan(days int) error
-	ClearAll() error
+	ListRecent(limit int, userID string) ([]SyncLog, error)
+	ClearOlderThan(days int, userID string) error
+	ClearAll(userID string) error
 }

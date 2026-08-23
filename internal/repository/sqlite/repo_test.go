@@ -175,7 +175,9 @@ func TestSettingsAndLogs(t *testing.T) {
 		t.Fatalf("expected flac, got %s, err: %v", val, err)
 	}
 
+	userID := uuid.New().String()
 	logEntry := &domain.SyncLog{
+		UserID:    userID,
 		Level:     domain.LogLevelInfo,
 		Message:   "Sync test initiated",
 		CreatedAt: time.Now().UTC(),
@@ -184,8 +186,14 @@ func TestSettingsAndLogs(t *testing.T) {
 		t.Fatalf("failed to insert log: %v", err)
 	}
 
-	logs, err := logRepo.ListRecent(10)
+	logs, err := logRepo.ListRecent(10, userID)
 	if err != nil || len(logs) == 0 {
 		t.Fatalf("expected logs, got %v, err: %v", logs, err)
+	}
+
+	// Test user isolation for logs
+	otherLogs, err := logRepo.ListRecent(10, "other-user")
+	if err != nil || len(otherLogs) != 0 {
+		t.Fatalf("expected 0 logs for other user, got %d", len(otherLogs))
 	}
 }

@@ -30,14 +30,15 @@ type WorkerQueue struct {
 	settingsRepo  domain.SettingsRepository
 	eventHub      *EventHub
 
-	taskQueue  chan SyncTask
-	isSyncing  bool
-	current    domain.SyncProgress
-	mu         sync.RWMutex
-	ctx        context.Context
-	cancel     context.CancelFunc
-	taskCtx    context.Context
-	taskCancel context.CancelFunc
+	taskQueue    chan SyncTask
+	isSyncing    bool
+	userProgress map[string]domain.SyncProgress
+	activeUserID string
+	mu           sync.RWMutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	taskCtx      context.Context
+	taskCancel   context.CancelFunc
 }
 
 func NewWorkerQueue(
@@ -80,6 +81,7 @@ func NewWorkerQueue(
 		settingsRepo:  settingsRepo,
 		eventHub:      eventHub,
 		taskQueue:     make(chan SyncTask, queueSize),
+		userProgress:  make(map[string]domain.SyncProgress),
 		ctx:           ctx,
 		cancel:        cancel,
 	}
@@ -90,7 +92,7 @@ func (q *WorkerQueue) Start() {
 }
 
 func (q *WorkerQueue) Stop() {
-	q.CancelCurrent()
+	q.CancelCurrent("")
 	q.cancel()
 }
 
@@ -108,22 +110,36 @@ func (q *WorkerQueue) Enqueue(playlistID string, manual bool) error {
 	}
 }
 
-func (q *WorkerQueue) CancelCurrent() {
+func (q *WorkerQueue) CancelCurrent(userID string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.isSyncing && q.taskCancel != nil {
+	if q.isSyncing && q.taskCancel != nil && (userID == "" || q.activeUserID == userID) {
 		q.taskCancel()
 		q.isSyncing = false
-		q.current = domain.SyncProgress{Active: false}
-		q.eventHub.BroadcastProgress(domain.SyncProgress{Active: false})
-		q.log(nil, nil, domain.LogLevelWarn, "Синхронизация была отменена пользователем")
+		targetUID := q.activeUserID
+		if targetUID != "" {
+			delete(q.userProgress, targetUID)
+			q.eventHub.BroadcastProgress(targetUID, domain.SyncProgress{Active: false, UserID: targetUID})
+			q.log(targetUID, nil, nil, domain.LogLevelWarn, "Синхронизация была отменена пользователем")
+		}
 	}
 }
 
-func (q *WorkerQueue) GetCurrentProgress() domain.SyncProgress {
+func (q *WorkerQueue) GetCurrentProgress(userID string) domain.SyncProgress {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
-	return q.current
+	if userID != "" {
+		if p, ok := q.userProgress[userID]; ok {
+			return p
+		}
+		return domain.SyncProgress{Active: false, UserID: userID}
+	}
+	if q.activeUserID != "" {
+		if p, ok := q.userProgress[q.activeUserID]; ok {
+			return p
+		}
+	}
+	return domain.SyncProgress{Active: false}
 }
 
 func (q *WorkerQueue) IsBusy() bool {
@@ -143,8 +159,9 @@ func (q *WorkerQueue) workerLoop() {
 	}
 }
 
-func (q *WorkerQueue) log(playlistID *string, trackID *string, level domain.LogLevel, message string) {
+func (q *WorkerQueue) log(userID string, playlistID *string, trackID *string, level domain.LogLevel, message string) {
 	logEntry := &domain.SyncLog{
+		UserID:     userID,
 		PlaylistID: playlistID,
 		TrackID:    trackID,
 		Level:      level,
@@ -152,51 +169,55 @@ func (q *WorkerQueue) log(playlistID *string, trackID *string, level domain.LogL
 		CreatedAt:  time.Now().UTC(),
 	}
 	_ = q.logRepo.Create(logEntry)
-	q.eventHub.BroadcastLog(*logEntry)
+	q.eventHub.BroadcastLog(userID, *logEntry)
 }
 
 func (q *WorkerQueue) processTask(task SyncTask) {
+	playlist, err := q.playlistRepo.GetByID(task.PlaylistID)
+	if err != nil {
+		q.log("", nil, nil, domain.LogLevelError, fmt.Sprintf("Failed to find playlist %s: %v", task.PlaylistID, err))
+		return
+	}
+
+	userID := playlist.UserID
+
 	q.mu.Lock()
 	q.taskCtx, q.taskCancel = context.WithCancel(q.ctx)
 	taskCtx := q.taskCtx
 	q.isSyncing = true
-	q.current = domain.SyncProgress{
-		Active:     true,
-		PlaylistID: task.PlaylistID,
-		StatusText: "Initializing sync...",
+	q.activeUserID = userID
+	q.userProgress[userID] = domain.SyncProgress{
+		Active:        true,
+		UserID:        userID,
+		PlaylistID:    task.PlaylistID,
+		PlaylistTitle: playlist.Title,
+		StatusText:    "Initializing sync...",
 	}
 	q.mu.Unlock()
 
 	defer func() {
 		q.mu.Lock()
 		q.isSyncing = false
-		q.current = domain.SyncProgress{Active: false}
+		q.activeUserID = ""
+		delete(q.userProgress, userID)
 		q.mu.Unlock()
-		q.eventHub.BroadcastProgress(domain.SyncProgress{Active: false})
+		q.eventHub.BroadcastProgress(userID, domain.SyncProgress{Active: false, UserID: userID})
 	}()
-
-	playlist, err := q.playlistRepo.GetByID(task.PlaylistID)
-	if err != nil {
-		q.log(nil, nil, domain.LogLevelError, fmt.Sprintf("Failed to find playlist %s: %v", task.PlaylistID, err))
-		return
-	}
-
-	q.mu.Lock()
-	q.current.PlaylistTitle = playlist.Title
-	q.mu.Unlock()
 
 	playlist.Status = domain.PlaylistStatusSyncing
 	playlist.ErrorMessage = ""
 	_ = q.playlistRepo.Update(playlist)
-	q.eventHub.Broadcast(EventMessage{Type: EventTypePlaylist, Data: playlist})
+	q.eventHub.BroadcastUser(userID, EventMessage{Type: EventTypePlaylist, Data: playlist})
 
-	q.log(&playlist.ID, nil, domain.LogLevelInfo, fmt.Sprintf("Starting sync for playlist: %s (%s)", playlist.Title, playlist.YouTubeID))
+	q.log(userID, &playlist.ID, nil, domain.LogLevelInfo, fmt.Sprintf("Starting sync for playlist: %s (%s)", playlist.Title, playlist.YouTubeID))
 
 	// Step 1: Extract playlist entries via flat-playlist
 	q.mu.Lock()
-	q.current.StatusText = "Extracting playlist tracks..."
+	prog := q.userProgress[userID]
+	prog.StatusText = "Extracting playlist tracks..."
+	q.userProgress[userID] = prog
 	q.mu.Unlock()
-	q.eventHub.BroadcastProgress(q.GetCurrentProgress())
+	q.eventHub.BroadcastProgress(userID, q.GetCurrentProgress(userID))
 
 	flatOutput, err := q.ytdlpClient.ExtractPlaylistDeltaForUser(taskCtx, playlist.YouTubeID, playlist.UserID)
 	if err != nil {
@@ -208,18 +229,19 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		playlist.Status = domain.PlaylistStatusError
 		playlist.ErrorMessage = err.Error()
 		_ = q.playlistRepo.Update(playlist)
-		q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Playlist extraction failed: %v", err))
-		q.eventHub.Broadcast(EventMessage{Type: EventTypePlaylist, Data: playlist})
+		q.log(userID, &playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Playlist extraction failed: %v", err))
+		q.eventHub.BroadcastUser(userID, EventMessage{Type: EventTypePlaylist, Data: playlist})
 
 		if isAuth, reason := ytdlp.IsYTDLPAuthError(err.Error()); isAuth || strings.Contains(err.Error(), "авторизация") {
 			valRes := q.ytdlpClient.ValidateUserCookies(playlist.UserID)
 			if valRes == nil || !valRes.IsValid || valRes.Status == ytdlp.CookieStatusExpired {
-				q.eventHub.Broadcast(EventMessage{
+				q.eventHub.BroadcastUser(playlist.UserID, EventMessage{
 					Type: EventTypeCookieStatus,
 					Data: map[string]interface{}{
+						"user_id":      playlist.UserID,
 						"status":       "expired",
 						"is_valid":     false,
-						"has_cookies":  true,
+						"has_cookies":  valRes.HasCookies,
 						"error_reason": reason,
 					},
 				})
@@ -243,12 +265,12 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		}
 	}
 
-	q.log(&playlist.ID, nil, domain.LogLevelInfo, fmt.Sprintf("Found %d tracks in remote playlist", len(extractedIDs)))
+	q.log(userID, &playlist.ID, nil, domain.LogLevelInfo, fmt.Sprintf("Found %d tracks in remote playlist", len(extractedIDs)))
 
 	// Step 2: Batch delta check with database (User-scoped)
 	existingMap, err := q.trackRepo.GetExistingYouTubeIDs(extractedIDs, playlist.UserID)
 	if err != nil {
-		q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Failed to check existing tracks: %v", err))
+		q.log(userID, &playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Failed to check existing tracks: %v", err))
 		existingMap = make(map[string]bool)
 	}
 
@@ -261,7 +283,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			// Check if blacklisted for this user
 			blacklisted, err := q.blacklistRepo.Exists(id, playlist.UserID)
 			if err != nil {
-				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Blacklist check error for %s: %v", id, err))
+				q.log(userID, &playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Blacklist check error for %s: %v", id, err))
 			}
 			if blacklisted {
 				blacklistedCount++
@@ -271,7 +293,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		}
 	}
 
-	q.log(&playlist.ID, nil, domain.LogLevelInfo, fmt.Sprintf("Delta identified: %d new tracks to download (skipped %d existing, %d blacklisted)", len(missingEntries), len(extractedIDs)-len(missingEntries)-blacklistedCount, blacklistedCount))
+	q.log(userID, &playlist.ID, nil, domain.LogLevelInfo, fmt.Sprintf("Delta identified: %d new tracks to download (skipped %d existing, %d blacklisted)", len(missingEntries), len(extractedIDs)-len(missingEntries)-blacklistedCount, blacklistedCount))
 
 	// Step 3: Download missing tracks sequentially with rate-limit protection
 	totalToDownload := len(missingEntries)
@@ -283,7 +305,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		case <-taskCtx.Done():
 			playlist.Status = domain.PlaylistStatusIdle
 			_ = q.playlistRepo.Update(playlist)
-			q.log(&playlist.ID, nil, domain.LogLevelWarn, "Синхронизация была прервана пользователем")
+			q.log(userID, &playlist.ID, nil, domain.LogLevelWarn, "Синхронизация была прервана пользователем")
 			return
 		default:
 		}
@@ -294,7 +316,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			for _, st := range allStats {
 				if st.ID == user.ID && st.StorageUsedBytes >= user.StorageQuotaBytes {
 					msg := fmt.Sprintf("Достигнут лимит дискового пространства пользователя (%d MB / %d MB). Синхронизация приостановлена.", st.StorageUsedBytes/(1024*1024), user.StorageQuotaBytes/(1024*1024))
-					q.log(&playlist.ID, nil, domain.LogLevelWarn, msg)
+					q.log(userID, &playlist.ID, nil, domain.LogLevelWarn, msg)
 					playlist.Status = domain.PlaylistStatusIdle
 					_ = q.playlistRepo.Update(playlist)
 					return
@@ -307,7 +329,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			if globalLimit, err := strconv.ParseInt(globalLimitStr, 10, 64); err == nil && globalLimit > 0 {
 				if stats, _ := q.trackRepo.GetStats(""); stats != nil && stats.TotalStorageSize >= globalLimit {
 					msg := fmt.Sprintf("Достигнут общий лимит хранилища музыки на сервере (%d MB / %d MB). Синхронизация остановлена.", stats.TotalStorageSize/(1024*1024), globalLimit/(1024*1024))
-					q.log(&playlist.ID, nil, domain.LogLevelWarn, msg)
+					q.log(userID, &playlist.ID, nil, domain.LogLevelWarn, msg)
 					playlist.Status = domain.PlaylistStatusIdle
 					_ = q.playlistRepo.Update(playlist)
 					return
@@ -326,15 +348,17 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		}
 
 		q.mu.Lock()
-		q.current.CurrentTrackIndex = currentIndex
-		q.current.TotalTracks = totalToDownload
-		q.current.CurrentTrackTitle = trackTitle
-		q.current.CurrentTrackID = entry.GetID()
-		q.current.TrackPercentage = 0
-		q.current.Percentage = float64(idx) / float64(totalToDownload) * 100.0
-		q.current.StatusText = fmt.Sprintf("[%d/%d] %s", currentIndex, totalToDownload, trackTitle)
+		prog := q.userProgress[userID]
+		prog.CurrentTrackIndex = currentIndex
+		prog.TotalTracks = totalToDownload
+		prog.CurrentTrackTitle = trackTitle
+		prog.CurrentTrackID = entry.GetID()
+		prog.TrackPercentage = 0
+		prog.Percentage = float64(idx) / float64(totalToDownload) * 100.0
+		prog.StatusText = fmt.Sprintf("[%d/%d] %s", currentIndex, totalToDownload, trackTitle)
+		q.userProgress[userID] = prog
 		q.mu.Unlock()
-		q.eventHub.BroadcastProgress(q.GetCurrentProgress())
+		q.eventHub.BroadcastProgress(userID, q.GetCurrentProgress(userID))
 
 		// Create temporary placeholder track record in DB
 		trackID := uuid.New().String()
@@ -353,7 +377,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		}
 		_ = q.trackRepo.Create(initialTrack)
 
-		q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelInfo, fmt.Sprintf("[%d/%d] Fetching audio & tags: %s - %s", currentIndex, totalToDownload, trackArtist, trackTitle))
+		q.log(userID, &playlist.ID, &initialTrack.ID, domain.LogLevelInfo, fmt.Sprintf("[%d/%d] Fetching audio & tags: %s - %s", currentIndex, totalToDownload, trackArtist, trackTitle))
 
 		// Check if physical audio file already exists on server disk from previous syncs or other libraries
 		if existingTrack, _ := q.trackRepo.GetByYouTubeID(entry.GetID(), ""); existingTrack != nil && existingTrack.FilePath != "" {
@@ -373,8 +397,8 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 				initialTrack.DownloadedAt = &downloadedTime
 				_ = q.trackRepo.Update(initialTrack)
 				successCount++
-				q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelSuccess, fmt.Sprintf("Archived (reused local file): %s - %s", initialTrack.Artist, initialTrack.Title))
-				q.eventHub.Broadcast(EventMessage{Type: EventTypeTrack, Data: initialTrack})
+				q.log(userID, &playlist.ID, &initialTrack.ID, domain.LogLevelSuccess, fmt.Sprintf("Archived (reused local file): %s - %s", initialTrack.Artist, initialTrack.Title))
+				q.eventHub.BroadcastUser(userID, EventMessage{Type: EventTypeTrack, Data: initialTrack})
 				continue
 			}
 		}
@@ -382,19 +406,21 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		// Download track via yt-dlp using user's session with smart alternative search fallback
 		res, dlErr := q.ytdlpClient.DownloadTrackForUser(taskCtx, entry.GetID(), trackTitle, trackArtist, playlist.UserID, func(percent float64, speed, eta, status string) {
 			q.mu.Lock()
-			q.current.TrackPercentage = percent
-			q.current.Speed = speed
-			q.current.ETA = eta
+			prog := q.userProgress[userID]
+			prog.TrackPercentage = percent
+			prog.Speed = speed
+			prog.ETA = eta
 			if status == "processing" {
-				q.current.StatusText = fmt.Sprintf("[%d/%d] Обработка: %s", currentIndex, totalToDownload, trackTitle)
+				prog.StatusText = fmt.Sprintf("[%d/%d] Обработка: %s", currentIndex, totalToDownload, trackTitle)
 			} else {
-				q.current.StatusText = fmt.Sprintf("[%d/%d] %s", currentIndex, totalToDownload, trackTitle)
+				prog.StatusText = fmt.Sprintf("[%d/%d] %s", currentIndex, totalToDownload, trackTitle)
 			}
 			if totalToDownload > 0 {
-				q.current.Percentage = (float64(idx) + percent/100.0) / float64(totalToDownload) * 100.0
+				prog.Percentage = (float64(idx) + percent/100.0) / float64(totalToDownload) * 100.0
 			}
+			q.userProgress[userID] = prog
 			q.mu.Unlock()
-			q.eventHub.BroadcastProgress(q.GetCurrentProgress())
+			q.eventHub.BroadcastProgress(userID, q.GetCurrentProgress(userID))
 		})
 
 		if dlErr != nil {
@@ -432,24 +458,25 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 					Title:     trackTitle,
 					Artist:    trackArtist,
 				})
-				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен и занесен в черный список недоступный на YouTube трек [%s - %s] (%s)", trackArtist, trackTitle, entry.GetID()))
+				q.log(userID, &playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен и занесен в черный список недоступный на YouTube трек [%s - %s] (%s)", trackArtist, trackTitle, entry.GetID()))
 			} else if isAuth, reason := ytdlp.IsYTDLPAuthError(errMsg); isAuth || strings.Contains(errMsg, "авторизация") {
-				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека [%s - %s]: %s (Детали: %s)", trackArtist, trackTitle, reason, errMsg))
+				q.log(userID, &playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека [%s - %s]: %s (Детали: %s)", trackArtist, trackTitle, reason, errMsg))
 				// Only broadcast cookie status if cookies on disk are genuinely expired/invalid
 				valRes := q.ytdlpClient.ValidateUserCookies(playlist.UserID)
 				if valRes == nil || !valRes.IsValid || valRes.Status == ytdlp.CookieStatusExpired {
-					q.eventHub.Broadcast(EventMessage{
+					q.eventHub.BroadcastUser(playlist.UserID, EventMessage{
 						Type: EventTypeCookieStatus,
 						Data: map[string]interface{}{
+							"user_id":      playlist.UserID,
 							"status":       "expired",
 							"is_valid":     false,
-							"has_cookies":  true,
+							"has_cookies":  valRes.HasCookies,
 							"error_reason": reason,
 						},
 					})
 				}
 			} else {
-				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка загрузки %s: %v", trackTitle, dlErr))
+				q.log(userID, &playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка загрузки %s: %v", trackTitle, dlErr))
 			}
 		} else {
 			successCount++
@@ -468,8 +495,8 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			initialTrack.DownloadedAt = &downloadedTime
 			_ = q.trackRepo.Update(initialTrack)
 
-			q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelSuccess, fmt.Sprintf("Successfully archived: %s - %s", res.Artist, res.Title))
-			q.eventHub.Broadcast(EventMessage{Type: EventTypeTrack, Data: initialTrack})
+			q.log(userID, &playlist.ID, &initialTrack.ID, domain.LogLevelSuccess, fmt.Sprintf("Successfully archived: %s - %s", res.Artist, res.Title))
+			q.eventHub.BroadcastUser(userID, EventMessage{Type: EventTypeTrack, Data: initialTrack})
 		}
 
 		// Jitter/sleep between downloads to avoid aggressive throttling
@@ -483,6 +510,6 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 	playlist.ErrorMessage = ""
 	_ = q.playlistRepo.Update(playlist)
 
-	q.log(&playlist.ID, nil, domain.LogLevelSuccess, fmt.Sprintf("Sync completed for %s. Downloaded: %d, Failed: %d, Skipped: %d", playlist.Title, successCount, failedCount, len(extractedIDs)-totalToDownload))
-	q.eventHub.Broadcast(EventMessage{Type: EventTypePlaylist, Data: playlist})
+	q.log(userID, &playlist.ID, nil, domain.LogLevelSuccess, fmt.Sprintf("Sync completed for %s. Downloaded: %d, Failed: %d, Skipped: %d", playlist.Title, successCount, failedCount, len(extractedIDs)-totalToDownload))
+	q.eventHub.BroadcastUser(userID, EventMessage{Type: EventTypePlaylist, Data: playlist})
 }
