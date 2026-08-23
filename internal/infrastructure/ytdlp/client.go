@@ -431,7 +431,6 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--extract-audio",
 		"--audio-format", format,
 		"--audio-quality", "0",
-		"--postprocessor-args", "ffmpeg:-movflags +faststart",
 		"--write-thumbnail",
 		"--convert-thumbnails", "jpg",
 		"--embed-metadata",
@@ -569,6 +568,18 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	parseProgressLine := func(line string) {
+		if onProgress != nil {
+			if matches := progressRegex.FindStringSubmatch(line); len(matches) >= 5 {
+				pct, _ := strconv.ParseFloat(matches[1], 64)
+				onProgress(pct, matches[3], matches[4], "downloading")
+			} else if matches := progressSimpleRegex.FindStringSubmatch(line); len(matches) >= 2 {
+				pct, _ := strconv.ParseFloat(matches[1], 64)
+				onProgress(pct, "", "", "downloading")
+			}
+		}
+	}
+
 	// Stream stdout in real-time
 	go func() {
 		defer wg.Done()
@@ -583,15 +594,7 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 				mu.Unlock()
 			}
 
-			if onProgress != nil {
-				if matches := progressRegex.FindStringSubmatch(line); len(matches) >= 5 {
-					pct, _ := strconv.ParseFloat(matches[1], 64)
-					onProgress(pct, matches[3], matches[4], "downloading")
-				} else if matches := progressSimpleRegex.FindStringSubmatch(line); len(matches) >= 2 {
-					pct, _ := strconv.ParseFloat(matches[1], 64)
-					onProgress(pct, "", "", "downloading")
-				}
-			}
+			parseProgressLine(line)
 		}
 	}()
 
@@ -607,6 +610,8 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 			stderrBuf.WriteString(line)
 			stderrBuf.WriteString("\n")
 			mu.Unlock()
+
+			parseProgressLine(line)
 		}
 	}()
 
@@ -648,6 +653,25 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 					break
 				}
 			}
+		}
+	}
+
+	// Optimize .m4a / .mp4 containers with faststart for instant HTTP audio playback
+	if fi != nil && (strings.HasSuffix(expectedAudioPath, ".m4a") || strings.HasSuffix(expectedAudioPath, ".mp4")) {
+		ffmpegBin := c.ffmpegPath
+		if ffmpegBin == "" {
+			ffmpegBin = "ffmpeg"
+		}
+		tmpFast := expectedAudioPath + ".fast.m4a"
+		fastCmd := exec.Command(ffmpegBin, "-y", "-i", expectedAudioPath, "-c", "copy", "-movflags", "+faststart", tmpFast)
+		if fErr := fastCmd.Run(); fErr == nil {
+			_ = os.Rename(tmpFast, expectedAudioPath)
+			if updatedFi, sErr := os.Stat(expectedAudioPath); sErr == nil {
+				fi = updatedFi
+			}
+			log.Printf("[yt-dlp] Applied faststart optimization to %s", expectedAudioPath)
+		} else {
+			_ = os.Remove(tmpFast)
 		}
 	}
 
