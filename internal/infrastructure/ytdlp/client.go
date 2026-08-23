@@ -159,7 +159,6 @@ func (c *Client) GetUserCookiesPath(userID string) string {
 			return userPath
 		}
 	}
-	// Fallback to root cookies file if it exists
 	if info, err := os.Stat(c.cookiesPath); err == nil && info.Size() > 0 {
 		return c.cookiesPath
 	}
@@ -315,6 +314,7 @@ type DownloadResult struct {
 var (
 	progressRegex       = regexp.MustCompile(`\[download\]\s+([\d\.]+)%\s+of\s+(?:~?\s*)?(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
 	progressSimpleRegex = regexp.MustCompile(`\[download\]\s+([\d\.]+)%`)
+	junkRegex           = regexp.MustCompile(`(?i)\s*[\(\[](?:official\s*(?:audio|video|music\s*video|hd|hq|lyric\s*video)?|audio\s*only|audio|lyrics|lyric\s*video|hd|hq|4k)[\)\]]`)
 )
 
 func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string, userID string, withCookies bool) []string {
@@ -339,6 +339,7 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--newline",
 		"--geo-bypass",
 		"--geo-bypass-country", "US",
+		"--extractor-args", "youtube:player_client=android,ios,mweb",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--prefer-ffmpeg",
@@ -389,7 +390,7 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 		return res, nil
 	}
 
-	// Attempt 2: If failed with cookies, retry without cookies (fixes expired session / client mismatch errors)
+	// Attempt 2: If failed with cookies, retry without cookies
 	if hasCookies && trackCtx.Err() == nil {
 		res, err2 := c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, false, onProgress)
 		if err2 == nil {
@@ -407,7 +408,7 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 			if res.Title == "Unknown Title" || res.Title == "" {
 				res.Title = title
 			}
-			if res.Artist == "Unknown Artist" || res.Artist == "" {
+			if res.Artist == "Unknown Artist" || res.Artist == "" || res.Artist == "NA" {
 				res.Artist = artist
 			}
 			return res, nil
@@ -500,12 +501,27 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 		fileSize = fi.Size()
 	}
 
+	// Detect cover file
 	expectedCoverPath := filepath.Join(c.musicDir, fmt.Sprintf("%s.jpg", youtubeID))
 	finalCoverPath := filepath.Join(c.coversDir, fmt.Sprintf("%s.jpg", youtubeID))
 	if _, err := os.Stat(expectedCoverPath); err == nil {
 		_ = os.MkdirAll(c.coversDir, 0755)
 		_ = os.Rename(expectedCoverPath, finalCoverPath)
+	} else if _, err := os.Stat(finalCoverPath); err == nil {
+		// Already in covers dir
 	} else {
+		// Look for webp or other cover formats in musicDir
+		coverMatches, _ := filepath.Glob(filepath.Join(c.musicDir, fmt.Sprintf("%s.*", youtubeID)))
+		for _, cm := range coverMatches {
+			if strings.HasSuffix(cm, ".jpg") || strings.HasSuffix(cm, ".webp") || strings.HasSuffix(cm, ".png") {
+				_ = os.MkdirAll(c.coversDir, 0755)
+				_ = os.Rename(cm, finalCoverPath)
+				break
+			}
+		}
+	}
+
+	if _, err := os.Stat(finalCoverPath); err != nil {
 		finalCoverPath = ""
 	}
 
@@ -529,26 +545,38 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 	if meta != "" {
 		parts := strings.Split(strings.TrimPrefix(meta, "METADATA:"), "|||")
 		if len(parts) >= 1 && parts[0] != "" {
-			res.ID = parts[0]
+			res.ID = youtubeID
 		}
-		if len(parts) >= 2 && parts[1] != "" {
+		if len(parts) >= 2 && parts[1] != "" && parts[1] != "NA" {
 			res.Title = parts[1]
 		}
-		if len(parts) >= 3 && parts[2] != "" {
+		if len(parts) >= 3 && parts[2] != "" && parts[2] != "NA" {
 			res.Artist = parts[2]
-		} else if len(parts) >= 6 && parts[5] != "" {
+		} else if len(parts) >= 6 && parts[5] != "" && parts[5] != "NA" {
 			res.Artist = parts[5]
-		} else if len(parts) >= 7 && parts[6] != "" {
+		} else if len(parts) >= 7 && parts[6] != "" && parts[6] != "NA" {
 			res.Artist = parts[6]
 		}
-		if len(parts) >= 4 && parts[3] != "" {
+		if len(parts) >= 4 && parts[3] != "" && parts[3] != "NA" {
 			res.Album = parts[3]
 		}
-		if len(parts) >= 5 && parts[4] != "" {
+		if len(parts) >= 5 && parts[4] != "" && parts[4] != "NA" {
 			sec, _ := strconv.Atoi(parts[4])
 			res.Duration = sec
 		}
 	}
+
+	// Smart parse Title & Artist if Artist is NA or missing
+	if res.Artist == "" || res.Artist == "NA" || res.Artist == "Unknown Artist" {
+		if strings.Contains(res.Title, " - ") {
+			subParts := strings.SplitN(res.Title, " - ", 2)
+			res.Artist = strings.TrimSpace(subParts[0])
+			res.Title = strings.TrimSpace(subParts[1])
+		}
+	}
+
+	// Clean up video junk from title
+	res.Title = strings.TrimSpace(junkRegex.ReplaceAllString(res.Title, ""))
 
 	return res, nil
 }
@@ -572,6 +600,8 @@ func (c *Client) TestProxyConnection(ctx context.Context, proxyURLStr string) er
 	if err != nil {
 		return err
 	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
 	resp, err := client.Do(req)
 	if err != nil {

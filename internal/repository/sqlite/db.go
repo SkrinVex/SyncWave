@@ -141,5 +141,14 @@ func (db *DB) Migrate() error {
 	_, _ = db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('global_storage_limit_bytes', '0');")
 	_, _ = db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('default_user_quota_bytes', '10737418240');")
 
+	// 5. Clean up tracks with artist 'NA' and 'Artist - Title' format
+	_, _ = db.Exec(`
+		UPDATE tracks 
+		SET artist = TRIM(SUBSTR(title, 1, INSTR(title, ' - ') - 1)),
+		    title = TRIM(SUBSTR(title, INSTR(title, ' - ') + 3))
+		WHERE (artist = 'NA' OR artist = '' OR artist = 'Unknown Artist') 
+		  AND INSTR(title, ' - ') > 0;
+	`)
+
 	return nil
 }
