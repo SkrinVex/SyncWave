@@ -400,6 +400,11 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		if dlErr != nil {
 			if taskCtx.Err() != nil {
 				_ = q.trackRepo.Delete(initialTrack.ID, playlist.UserID)
+				playlist.Status = domain.PlaylistStatusIdle
+				_ = q.playlistRepo.Update(playlist)
+				return
+			}
+			failedCount++
 			// Remove the broken track from the database immediately so it never pollutes the library!
 			_ = q.trackRepo.Delete(initialTrack.ID, playlist.UserID)
 
