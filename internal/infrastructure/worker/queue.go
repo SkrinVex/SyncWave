@@ -320,7 +320,11 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		}
 
 		currentIndex := idx + 1
-		trackTitle := entry.Title
+		trackArtist := entry.GetArtist()
+		if trackArtist == "" {
+			trackArtist = "Unknown Artist"
+		}
+		trackTitle := entry.GetCleanTitle()
 		if trackTitle == "" {
 			trackTitle = entry.GetID()
 		}
@@ -345,7 +349,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			PlaylistID: &playlist.ID,
 			UserID:     playlist.UserID,
 			Title:      trackTitle,
-			Artist:     entry.Uploader,
+			Artist:     trackArtist,
 			Duration:   entry.GetDuration(),
 			Status:     domain.TrackStatusDownloading,
 			CreatedAt:  now,
@@ -353,7 +357,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		}
 		_ = q.trackRepo.Create(initialTrack)
 
-		q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelInfo, fmt.Sprintf("[%d/%d] Fetching audio & tags: %s", currentIndex, totalToDownload, trackTitle))
+		q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelInfo, fmt.Sprintf("[%d/%d] Fetching audio & tags: %s - %s", currentIndex, totalToDownload, trackArtist, trackTitle))
 
 		// Check if physical audio file already exists on server disk from previous syncs or other libraries
 		if existingTrack, _ := q.trackRepo.GetByYouTubeID(entry.GetID(), ""); existingTrack != nil && existingTrack.FilePath != "" {
@@ -381,7 +385,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		}
 
 		// Download track via yt-dlp using user's session with smart alternative search fallback
-		res, dlErr := q.ytdlpClient.DownloadTrackForUser(taskCtx, entry.GetID(), trackTitle, entry.GetArtist(), playlist.UserID, func(percent float64, speed, eta, status string) {
+		res, dlErr := q.ytdlpClient.DownloadTrackForUser(taskCtx, entry.GetID(), trackTitle, trackArtist, playlist.UserID, func(percent float64, speed, eta, status string) {
 			q.mu.Lock()
 			q.current.TrackPercentage = percent
 			q.current.Speed = speed
@@ -422,9 +426,9 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 					YouTubeID: entry.GetID(),
 					UserID:    playlist.UserID,
 					Title:     trackTitle,
-					Artist:    entry.GetArtist(),
+					Artist:    trackArtist,
 				})
-				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен и занесен в черный список недоступный на YouTube трек [%s] (%s)", trackTitle, entry.GetID()))
+				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен и занесен в черный список недоступный на YouTube трек [%s - %s] (%s)", trackArtist, trackTitle, entry.GetID()))
 			} else if isAuth, reason := ytdlp.IsYTDLPAuthError(errMsg); isAuth || strings.Contains(errMsg, "авторизация") {
 				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека %s: %s", trackTitle, reason))
 				// Only broadcast cookie status if cookies on disk are genuinely expired/invalid

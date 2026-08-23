@@ -35,9 +35,37 @@ type PlaylistEntry struct {
 	Uploader   string      `json:"uploader"`
 	Artist     string      `json:"artist"`
 	Track      string      `json:"track"`
+	Channel    string      `json:"channel,omitempty"`
+	Creator    string      `json:"creator,omitempty"`
+	AltTitle   string      `json:"alt_title,omitempty"`
 	Duration   interface{} `json:"duration,omitempty"`
 	URL        string      `json:"url"`
 	WebpageURL string      `json:"webpage_url"`
+}
+
+var (
+	progressRegex       = regexp.MustCompile(`\[download\]\s+([\d\.]+)%\s+of\s+(?:~?\s*)?(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
+	progressSimpleRegex = regexp.MustCompile(`\[download\]\s+([\d\.]+)%`)
+	junkRegex           = regexp.MustCompile(`(?i)\s*[\(\[](?:official\s*(?:audio|video|music\s*video|hd|hq|lyric\s*video|mv)?|audio\s*only|audio|lyrics|lyric\s*video|hd|hq|4k|remastered|visualizer)[\)\]]`)
+)
+
+func CleanArtist(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "NA" || raw == "Unknown Artist" {
+		return ""
+	}
+	raw = strings.TrimSuffix(raw, " - Topic")
+	raw = strings.TrimSuffix(raw, " – Topic")
+	return strings.TrimSpace(raw)
+}
+
+func CleanTitle(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "NA" || raw == "Unknown Title" {
+		return ""
+	}
+	raw = junkRegex.ReplaceAllString(raw, "")
+	return strings.TrimSpace(raw)
 }
 
 func (e *PlaylistEntry) GetID() string {
@@ -62,13 +90,43 @@ func (e *PlaylistEntry) GetID() string {
 }
 
 func (e *PlaylistEntry) GetArtist() string {
-	if e.Artist != "" && e.Artist != "NA" {
-		return e.Artist
+	if a := CleanArtist(e.Artist); a != "" {
+		return a
 	}
-	if e.Uploader != "" && e.Uploader != "NA" {
-		return e.Uploader
+	if a := CleanArtist(e.Creator); a != "" {
+		return a
+	}
+	if a := CleanArtist(e.Uploader); a != "" {
+		return a
+	}
+	if a := CleanArtist(e.Channel); a != "" {
+		return a
+	}
+	if strings.Contains(e.Title, " - ") {
+		parts := strings.SplitN(e.Title, " - ", 2)
+		if len(parts) == 2 && strings.TrimSpace(parts[0]) != "" {
+			return CleanArtist(parts[0])
+		}
 	}
 	return ""
+}
+
+func (e *PlaylistEntry) GetCleanTitle() string {
+	title := e.Title
+	if e.Track != "" && e.Track != "NA" {
+		return CleanTitle(e.Track)
+	}
+	if strings.Contains(title, " - ") {
+		parts := strings.SplitN(title, " - ", 2)
+		if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+			title = parts[1]
+		}
+	}
+	clean := CleanTitle(title)
+	if clean != "" {
+		return clean
+	}
+	return e.Title
 }
 
 func (e *PlaylistEntry) GetDuration() int {
@@ -262,12 +320,10 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 		"--socket-timeout", "15",
 		"-R", "2",
 		"--no-mtime",
-		"--geo-bypass",
-		"--geo-bypass-country", "US",
+		"--newline",
 		"--no-check-certificates",
 		"--no-warnings",
-		"--js-runtimes", "node",
-		"--remote-components", "ejs:github",
+		"--extractor-args", "youtube:player_client=android,web;skip=translated_subs",
 	)
 
 	return args
@@ -334,12 +390,6 @@ type DownloadResult struct {
 	Bitrate   int    `json:"bitrate"`
 }
 
-var (
-	progressRegex       = regexp.MustCompile(`\[download\]\s+([\d\.]+)%\s+of\s+(?:~?\s*)?(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)`)
-	progressSimpleRegex = regexp.MustCompile(`\[download\]\s+([\d\.]+)%`)
-	junkRegex           = regexp.MustCompile(`(?i)\s*[\(\[](?:official\s*(?:audio|video|music\s*video|hd|hq|lyric\s*video)?|audio\s*only|audio|lyrics|lyric\s*video|hd|hq|4k)[\)\]]`)
-)
-
 func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string, userID string, withCookies bool) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -366,12 +416,9 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"-R", "2",
 		"--no-mtime",
 		"--newline",
-		"--geo-bypass",
-		"--geo-bypass-country", "US",
 		"--no-check-certificates",
 		"--no-warnings",
-		"--js-runtimes", "node",
-		"--remote-components", "ejs:github",
+		"--extractor-args", "youtube:player_client=android,web;skip=translated_subs",
 		"-f", "bestaudio/best",
 		"--extract-audio",
 		"--audio-format", format,
@@ -380,11 +427,14 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--write-thumbnail",
 		"--convert-thumbnails", "jpg",
 		"--embed-metadata",
+		"--embed-thumbnail",
 		"--parse-metadata", "%(release_year,upload_date)s:%(meta_date)s",
+		"--parse-metadata", "%(album,playlist,title)s:%(meta_album)s",
 		"--parse-metadata", "%(album,title)s:%(meta_album)s",
+		"--parse-metadata", "%(track_number,playlist_index)d:%(meta_track)s",
 		"--no-playlist",
 		"-o", outTemplate,
-		"--print", "METADATA:%(id)s|||%(title)s|||%(artist)s|||%(album)s|||%(duration)s|||%(uploader)s|||%(channel)s",
+		"--print", "METADATA:%(id)s|||%(title)s|||%(artist)s|||%(album)s|||%(duration)s|||%(uploader)s|||%(channel)s|||%(track)s|||%(creator)s",
 		"--no-simulate",
 		"--no-quiet",
 		targetURL,
@@ -405,7 +455,7 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 	}
 	c.mu.RUnlock()
 
-	targetURL := fmt.Sprintf("https://music.youtube.com/watch?v=%s", youtubeID)
+	targetURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", youtubeID)
 	outTemplate := filepath.Join(c.musicDir, fmt.Sprintf("%s.%%(ext)s", youtubeID))
 
 	// Track-level timeout: max 3 minutes per single track
@@ -414,7 +464,7 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 
 	hasCookies := c.HasUserCookies(userID)
 
-	// Attempt 1: Direct YouTube Music URL with cookies (if available)
+	// Attempt 1: Direct YouTube URL with cookies (if available)
 	res, err := c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, hasCookies, onProgress)
 	if err == nil {
 		return res, nil
@@ -432,8 +482,9 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 	// Attempt 3: If direct video ID failed (e.g. removed/unavailable) but title is known, search alternative
 	if trackCtx.Err() == nil && title != "" && title != youtubeID {
 		searchQuery := title
-		if artist != "" && artist != "Unknown Artist" && !strings.Contains(strings.ToLower(title), strings.ToLower(artist)) {
-			searchQuery = fmt.Sprintf("%s %s", artist, title)
+		cleanA := CleanArtist(artist)
+		if cleanA != "" && !strings.Contains(strings.ToLower(title), strings.ToLower(cleanA)) {
+			searchQuery = fmt.Sprintf("%s %s", cleanA, title)
 		}
 		searchURL := fmt.Sprintf("ytsearch1:%s", searchQuery)
 		res3, err3 := c.executeDownloadForUser(trackCtx, youtubeID, searchURL, outTemplate, format, userID, false, onProgress)
@@ -585,17 +636,24 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 			res.ID = youtubeID
 		}
 		if len(parts) >= 2 && parts[1] != "" && parts[1] != "NA" {
-			res.Title = parts[1]
+			res.Title = CleanTitle(parts[1])
 		}
+		if len(parts) >= 8 && parts[7] != "" && parts[7] != "NA" {
+			res.Title = CleanTitle(parts[7])
+		}
+
 		if len(parts) >= 3 && parts[2] != "" && parts[2] != "NA" {
-			res.Artist = parts[2]
+			res.Artist = CleanArtist(parts[2])
+		} else if len(parts) >= 9 && parts[8] != "" && parts[8] != "NA" {
+			res.Artist = CleanArtist(parts[8])
 		} else if len(parts) >= 6 && parts[5] != "" && parts[5] != "NA" {
-			res.Artist = parts[5]
+			res.Artist = CleanArtist(parts[5])
 		} else if len(parts) >= 7 && parts[6] != "" && parts[6] != "NA" {
-			res.Artist = parts[6]
+			res.Artist = CleanArtist(parts[6])
 		}
+
 		if len(parts) >= 4 && parts[3] != "" && parts[3] != "NA" {
-			res.Album = parts[3]
+			res.Album = strings.TrimSpace(parts[3])
 		}
 		if len(parts) >= 5 && parts[4] != "" && parts[4] != "NA" {
 			sec, _ := strconv.Atoi(parts[4])
@@ -607,13 +665,16 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 	if res.Artist == "" || res.Artist == "NA" || res.Artist == "Unknown Artist" {
 		if strings.Contains(res.Title, " - ") {
 			subParts := strings.SplitN(res.Title, " - ", 2)
-			res.Artist = strings.TrimSpace(subParts[0])
-			res.Title = strings.TrimSpace(subParts[1])
+			res.Artist = CleanArtist(subParts[0])
+			res.Title = CleanTitle(subParts[1])
 		}
 	}
-
-	// Clean up video junk from title
-	res.Title = strings.TrimSpace(junkRegex.ReplaceAllString(res.Title, ""))
+	if res.Artist == "" {
+		res.Artist = "Unknown Artist"
+	}
+	if res.Title == "" {
+		res.Title = "Unknown Title"
+	}
 
 	return res, nil
 }
