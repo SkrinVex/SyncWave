@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -367,7 +368,13 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			failedCount++
 			// Remove the broken track from the database immediately so it never pollutes the library!
 			_ = q.trackRepo.Delete(initialTrack.ID, playlist.UserID)
-			q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Failed to download %s: %v", trackTitle, dlErr))
+
+			errMsg := dlErr.Error()
+			if strings.Contains(errMsg, "removed") || strings.Contains(errMsg, "terminated") || strings.Contains(errMsg, "hate speech") || strings.Contains(errMsg, "copyright") || strings.Contains(errMsg, "no longer available") {
+				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен недоступный на YouTube трек [%s]: удален правообладателем или заблокирован платформой", trackTitle))
+			} else {
+				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка загрузки %s: %v", trackTitle, dlErr))
+			}
 		} else {
 			successCount++
 			initialTrack.Title = res.Title

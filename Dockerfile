@@ -42,7 +42,7 @@ FROM alpine:3.21 AS runner
 LABEL maintainer="SyncWave Team"
 LABEL description="Self-hosted YouTube Music Sync & Streaming Daemon"
 
-# Install python3, py3-pip, nodejs, ffmpeg, and install latest yt-dlp with yt-dlp-ejs challenge solver
+# Install python3, py3-pip, nodejs, ffmpeg, and install latest yt-dlp with yt-dlp-ejs and mutagen
 RUN apk add --no-cache \
     python3 \
     py3-pip \
@@ -52,7 +52,7 @@ RUN apk add --no-cache \
     tzdata \
     curl \
     dumb-init && \
-    pip install --no-cache-dir --upgrade yt-dlp yt-dlp-ejs --break-system-packages
+    pip install --no-cache-dir --upgrade yt-dlp yt-dlp-ejs mutagen --break-system-packages
 
 WORKDIR /app
 
