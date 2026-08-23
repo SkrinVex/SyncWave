@@ -61,6 +61,16 @@ func (e *PlaylistEntry) GetID() string {
 	return ""
 }
 
+func (e *PlaylistEntry) GetArtist() string {
+	if e.Artist != "" && e.Artist != "NA" {
+		return e.Artist
+	}
+	if e.Uploader != "" && e.Uploader != "NA" {
+		return e.Uploader
+	}
+	return ""
+}
+
 func (e *PlaylistEntry) GetDuration() int {
 	if e.Duration == nil {
 		return 0
@@ -254,7 +264,6 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 		"--no-mtime",
 		"--geo-bypass",
 		"--geo-bypass-country", "US",
-		"--extractor-args", "youtube:player_client=tv,tv_downgraded,web_embedded,android_vr,android",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
@@ -359,7 +368,6 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--newline",
 		"--geo-bypass",
 		"--geo-bypass-country", "US",
-		"--extractor-args", "youtube:player_client=tv,tv_downgraded,web_embedded,android_vr,android",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",

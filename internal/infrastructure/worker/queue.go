@@ -381,7 +381,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		}
 
 		// Download track via yt-dlp using user's session with smart alternative search fallback
-		res, dlErr := q.ytdlpClient.DownloadTrackForUser(taskCtx, entry.GetID(), trackTitle, entry.Artist, playlist.UserID, func(percent float64, speed, eta, status string) {
+		res, dlErr := q.ytdlpClient.DownloadTrackForUser(taskCtx, entry.GetID(), trackTitle, entry.GetArtist(), playlist.UserID, func(percent float64, speed, eta, status string) {
 			q.mu.Lock()
 			q.current.TrackPercentage = percent
 			q.current.Speed = speed
@@ -422,7 +422,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 					YouTubeID: entry.GetID(),
 					UserID:    playlist.UserID,
 					Title:     trackTitle,
-					Artist:    entry.Artist,
+					Artist:    entry.GetArtist(),
 				})
 				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен и занесен в черный список недоступный на YouTube трек [%s] (%s)", trackTitle, entry.GetID()))
 			} else if isAuth, reason := ytdlp.IsYTDLPAuthError(errMsg); isAuth || strings.Contains(errMsg, "авторизация") {
