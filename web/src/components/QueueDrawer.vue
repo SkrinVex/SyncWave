@@ -118,9 +118,11 @@
 <script setup>
 import { usePlayerStore } from '../stores/player'
 import { useTracksStore } from '../stores/tracks'
+import { useI18nStore } from '../stores/i18n'
 
 const playerStore = usePlayerStore()
 const tracksStore = useTracksStore()
+const i18n = useI18nStore()
 
 function formatDuration(secs) {
   if (!secs || isNaN(secs)) return '0:00'

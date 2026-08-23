@@ -34,7 +34,7 @@
       <div>
         <h2 class="text-2xl font-bold tracking-tight text-zinc-100">{{ i18n.t('library.title') }}</h2>
         <p class="text-xs text-zinc-400 mt-1">
-          {{ i18n.t('library.tracksCount') }} <span class="font-mono text-zinc-200">{{ tracksStore.total }}</span>
+          {{ i18n.t('library.tracksCount') }} <span class="font-mono text-zinc-200">{{ tracksStore.tracks.length }} / {{ tracksStore.total }}</span>
           <span v-if="tracksStore.searchQuery"> {{ i18n.t('library.matching') }} "<strong class="text-indigo-400">{{ tracksStore.searchQuery }}</strong>"</span>
         </p>
       </div>
@@ -289,29 +289,31 @@
       </div>
     </transition>
 
-    <!-- Pagination Controls -->
+    <!-- Infinite Scroll / Pool Loading Indicator & Sentinel -->
     <div
-      v-if="tracksStore.totalPages > 1"
-      class="flex items-center justify-between pt-4 border-t border-studio-border text-xs font-mono select-none"
+      ref="sentinelRef"
+      class="w-full py-4 min-h-[48px] flex flex-col items-center justify-center gap-2 select-none"
     >
-      <span class="text-zinc-400">
-        {{ i18n.t('library.page') }} {{ tracksStore.page }} {{ i18n.t('library.of') }} {{ tracksStore.totalPages }}
-      </span>
-      <div class="flex items-center gap-2">
-        <button
-          @click="changePage(tracksStore.page - 1)"
-          :disabled="tracksStore.page <= 1"
-          class="px-3 py-1.5 rounded bg-studio-elevated border border-studio-border text-zinc-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {{ i18n.t('library.previous') }}
-        </button>
-        <button
-          @click="changePage(tracksStore.page + 1)"
-          :disabled="tracksStore.page >= tracksStore.totalPages"
-          class="px-3 py-1.5 rounded bg-studio-elevated border border-studio-border text-zinc-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {{ i18n.t('library.next') }}
-        </button>
+      <div v-if="tracksStore.loadingMore" class="flex flex-col items-center justify-center gap-2">
+        <div class="flex items-center gap-2 text-xs font-mono text-indigo-400">
+          <svg class="w-4 h-4 animate-spin text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+          <span>Загрузка партии треков ({{ tracksStore.tracks.length }} из {{ tracksStore.total }})...</span>
+        </div>
+        <div class="w-56 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+          <div
+            class="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full transition-all duration-300"
+            :style="{ width: `${Math.min(100, Math.round((tracksStore.tracks.length / (tracksStore.total || 1)) * 100))}%` }"
+          ></div>
+        </div>
+      </div>
+
+      <div
+        v-else-if="tracksStore.tracks.length > 0 && !tracksStore.hasMore"
+        class="py-4 text-center text-xs font-mono text-zinc-500 border-t border-zinc-900/80 w-full"
+      >
+        ✓ Загружены все сохраненные треки ({{ tracksStore.tracks.length }})
       </div>
     </div>
 
@@ -342,7 +344,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useTracksStore } from '../stores/tracks'
 import { usePlaylistsStore } from '../stores/playlists'
 import { usePlayerStore } from '../stores/player'
@@ -368,15 +370,46 @@ const selectedTrackIds = ref(new Set())
 const showBatchDeleteConfirm = ref(false)
 const fileInputRef = ref(null)
 const isDraggingOver = ref(false)
+const sentinelRef = ref(null)
+let observer = null
 
 const isAllSelected = computed(() => {
   return tracksStore.tracks.length > 0 && tracksStore.tracks.every(t => selectedTrackIds.value.has(t.id))
 })
 
 onMounted(() => {
-  tracksStore.fetchTracks()
+  tracksStore.fetchTracks(true)
   tracksStore.fetchStats()
   playlistsStore.fetchPlaylists()
+
+  setupObserver()
+})
+
+onUnmounted(() => {
+  if (observer) {
+    observer.disconnect()
+  }
+})
+
+function setupObserver() {
+  if (observer) observer.disconnect()
+
+  observer = new IntersectionObserver((entries) => {
+    const [entry] = entries
+    if (entry.isIntersecting && tracksStore.hasMore && !tracksStore.loading && !tracksStore.loadingMore) {
+      tracksStore.fetchNextPage()
+    }
+  }, {
+    rootMargin: '400px',
+  })
+
+  if (sentinelRef.value) {
+    observer.observe(sentinelRef.value)
+  }
+}
+
+watch(sentinelRef, () => {
+  setupObserver()
 })
 
 function triggerUploadDialog() {
@@ -457,13 +490,6 @@ function selectPlaylist(id) {
 function toggleSortOrder() {
   tracksStore.sortOrder = tracksStore.sortOrder === 'asc' ? 'desc' : 'asc'
   tracksStore.fetchTracks(true)
-}
-
-function changePage(p) {
-  tracksStore.page = p
-  selectedTrackIds.value = new Set()
-  tracksStore.fetchTracks()
-  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 async function handlePlay(track) {

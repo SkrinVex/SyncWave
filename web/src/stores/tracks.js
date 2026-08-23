@@ -11,6 +11,11 @@ export const useTracksStore = defineStore('tracks', () => {
   const pageSize = ref(50)
   const totalPages = ref(1)
   const loading = ref(false)
+  const loadingMore = ref(false)
+
+  const hasMore = computed(() => {
+    return tracks.value.length < total.value
+  })
 
   const searchQuery = ref('')
   const selectedPlaylist = ref('')
@@ -56,9 +61,11 @@ export const useTracksStore = defineStore('tracks', () => {
     }
   }
 
-  async function fetchTracks(resetPage = false) {
-    if (resetPage) page.value = 1
-    loading.value = true
+  async function fetchTracks(reset = false) {
+    if (reset) {
+      page.value = 1
+      loading.value = true
+    }
     try {
       const params = new URLSearchParams({
         page: page.value,
@@ -76,16 +83,34 @@ export const useTracksStore = defineStore('tracks', () => {
       })
       if (res.ok) {
         const data = await res.json()
-        tracks.value = data.tracks || []
+        const fetchedTracks = data.tracks || []
         total.value = data.total || 0
-        page.value = data.page || 1
         totalPages.value = data.total_pages || 1
+
+        if (page.value === 1 || reset) {
+          tracks.value = fetchedTracks
+        } else {
+          const existingIds = new Set(tracks.value.map(t => t.id))
+          for (const t of fetchedTracks) {
+            if (!existingIds.has(t.id)) {
+              tracks.value.push(t)
+            }
+          }
+        }
       }
     } catch (e) {
       console.error('Failed to fetch tracks:', e)
     } finally {
       loading.value = false
+      loadingMore.value = false
     }
+  }
+
+  async function fetchNextPage() {
+    if (loading.value || loadingMore.value || !hasMore.value) return
+    loadingMore.value = true
+    page.value++
+    await fetchTracks(false)
   }
 
   async function fetchStats() {
@@ -166,6 +191,8 @@ export const useTracksStore = defineStore('tracks', () => {
     pageSize,
     totalPages,
     loading,
+    loadingMore,
+    hasMore,
     searchQuery,
     selectedPlaylist,
     selectedStatus,
@@ -177,6 +204,7 @@ export const useTracksStore = defineStore('tracks', () => {
     getTrackDownloadUrl,
     updateTrack,
     fetchTracks,
+    fetchNextPage,
     fetchAllReadyTracks,
     fetchStats,
     deleteTrack,
