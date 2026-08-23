@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/syncwave/syncwave/internal/domain"
 	"github.com/syncwave/syncwave/internal/infrastructure/auth"
 )
 
@@ -17,10 +18,14 @@ const (
 
 type AuthMiddleware struct {
 	jwtService *auth.JWTService
+	userRepo   domain.UserRepository
 }
 
-func NewAuthMiddleware(jwtService *auth.JWTService) *AuthMiddleware {
-	return &AuthMiddleware{jwtService: jwtService}
+func NewAuthMiddleware(jwtService *auth.JWTService, userRepo domain.UserRepository) *AuthMiddleware {
+	return &AuthMiddleware{
+		jwtService: jwtService,
+		userRepo:   userRepo,
+	}
 }
 
 func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
@@ -49,10 +54,29 @@ func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 			return
 		}
 
+		// Verify user actually still exists in database (instant revoking for deleted users)
+		user, err := m.userRepo.GetByID(claims.UserID)
+		if err != nil || user == nil {
+			http.Error(w, `{"error":"unauthorized","message":"user account has been deleted or deactivated"}`, http.StatusUnauthorized)
+			return
+		}
+
 		ctx := context.WithValue(r.Context(), UserContextKey, claims)
 		ctx = context.WithValue(ctx, UserIDKey, claims.UserID)
 		ctx = context.WithValue(ctx, "user_id", claims.UserID)
+		ctx = context.WithValue(ctx, "is_admin", user.IsAdmin)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (m *AuthMiddleware) RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		isAdmin, ok := r.Context().Value("is_admin").(bool)
+		if !ok || !isAdmin {
+			http.Error(w, `{"error":"forbidden","message":"administrator privileges required"}`, http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

@@ -5,6 +5,7 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('syncwave_token') || '')
   const user = ref(JSON.parse(localStorage.getItem('syncwave_user') || 'null'))
   const needsSetup = ref(false)
+  const allowRegistration = ref(false)
   const loading = ref(false)
 
   const isAuthenticated = computed(() => !!token.value)
@@ -19,12 +20,38 @@ export const useAuthStore = defineStore('auth', () => {
       if (res.ok) {
         const data = await res.json()
         needsSetup.value = data.needs_setup
+        allowRegistration.value = data.allow_registration
         if (token.value && !needsSetup.value) {
           await fetchMe()
         }
       }
     } catch (e) {
       console.error('Failed to check auth status:', e)
+    }
+  }
+
+  async function register(username, password) {
+    loading.value = true
+    try {
+      const res = await fetch('/api/v1/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+      if (!res.ok) {
+        const errText = await res.text()
+        let errMsg = errText
+        try {
+          const json = JSON.parse(errText)
+          if (json.error) errMsg = json.error
+        } catch {}
+        throw new Error(errMsg || 'Не удалось зарегистрироваться')
+      }
+      const data = await res.json()
+      setSession(data.token, data.user)
+      return true
+    } finally {
+      loading.value = false
     }
   }
 
@@ -116,6 +143,7 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     user,
     needsSetup,
+    allowRegistration,
     loading,
     isAuthenticated,
     authHeaders,
@@ -123,6 +151,7 @@ export const useAuthStore = defineStore('auth', () => {
     checkAuthStatus: checkStatus,
     setupAdmin,
     login,
+    register,
     logout,
     fetchMe,
   }

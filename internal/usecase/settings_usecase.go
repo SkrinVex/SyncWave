@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/syncwave/syncwave/internal/domain"
@@ -15,6 +16,7 @@ type SettingsUsecase struct {
 	settingsRepo domain.SettingsRepository
 	trackRepo    domain.TrackRepository
 	playlistRepo domain.PlaylistRepository
+	userRepo     domain.UserRepository
 	ytdlpClient  *ytdlp.Client
 	dataDir      string
 	dbPath       string
@@ -24,6 +26,7 @@ func NewSettingsUsecase(
 	settingsRepo domain.SettingsRepository,
 	trackRepo domain.TrackRepository,
 	playlistRepo domain.PlaylistRepository,
+	userRepo domain.UserRepository,
 	ytdlpClient *ytdlp.Client,
 	dataDir string,
 	dbPath string,
@@ -32,6 +35,7 @@ func NewSettingsUsecase(
 		settingsRepo: settingsRepo,
 		trackRepo:    trackRepo,
 		playlistRepo: playlistRepo,
+		userRepo:     userRepo,
 		ytdlpClient:  ytdlpClient,
 		dataDir:      dataDir,
 		dbPath:       dbPath,
@@ -57,6 +61,13 @@ func (u *SettingsUsecase) GetSystemSettings(userID string) (*domain.SystemSettin
 		maxConcurrent = 2
 	}
 
+	allowReg := settingsMap["allow_registration"] == "1" || settingsMap["allow_registration"] == "true"
+	globalLimit, _ := strconv.ParseInt(settingsMap["global_storage_limit_bytes"], 10, 64)
+	defaultQuota, _ := strconv.ParseInt(settingsMap["default_user_quota_bytes"], 10, 64)
+	if defaultQuota <= 0 {
+		defaultQuota = 10737418240
+	}
+
 	ytdlpVer, _ := u.ytdlpClient.GetYTDLPVersion()
 	ffmpegVer, _ := u.ytdlpClient.GetFFmpegVersion()
 
@@ -78,20 +89,60 @@ func (u *SettingsUsecase) GetSystemSettings(userID string) (*domain.SystemSettin
 		storageUsage = stats.TotalStorageSize
 	}
 
+	// Host Physical Disk usage
+	var hostTotal, hostFree, hostUsed uint64
+	var stat syscall.Statfs_t
+	checkDir := u.dataDir
+	if checkDir == "" {
+		checkDir = "/"
+	}
+	if err := syscall.Statfs(checkDir, &stat); err == nil {
+		hostTotal = stat.Blocks * uint64(stat.Bsize)
+		hostFree = stat.Bavail * uint64(stat.Bsize)
+		hostUsed = hostTotal - hostFree
+	}
+
+	// User-specific stats
+	var userQuota int64
+	var userUsage int64
+	var isAdmin bool
+	if user, err := u.userRepo.GetByID(userID); err == nil && user != nil {
+		userQuota = user.StorageQuotaBytes
+		isAdmin = user.IsAdmin
+	}
+
+	// Calculate user specific storage usage
+	allUserStats, _ := u.userRepo.ListWithStats()
+	for _, uStats := range allUserStats {
+		if uStats.ID == userID {
+			userUsage = uStats.StorageUsedBytes
+			break
+		}
+	}
+
 	return &domain.SystemSettings{
-		HTTPProxy:           httpProxy,
-		AudioFormat:         audioFormat,
-		AudioQuality:        "0 (Best)",
-		MaxConcurrent:       maxConcurrent,
-		HasCookies:          hasCookies,
-		CookiesValid:        hasCookies,
-		CookiesUpdatedAt:    cookiesMod,
-		YTDLPVersion:        ytdlpVer,
-		FFmpegVersion:       ffmpegVer,
-		StorageUsageBytes:   storageUsage,
-		DatabaseSizeBytes:   dbSize,
-		TotalTracksCount:    totalTracks,
-		TotalPlaylistsCount: len(playlists),
+		HTTPProxy:               httpProxy,
+		AudioFormat:             audioFormat,
+		AudioQuality:            "0 (Best)",
+		MaxConcurrent:           maxConcurrent,
+		AllowRegistration:       allowReg,
+		GlobalStorageLimitBytes: globalLimit,
+		DefaultUserQuotaBytes:   defaultQuota,
+		HasCookies:              hasCookies,
+		CookiesValid:            hasCookies,
+		CookiesUpdatedAt:        cookiesMod,
+		YTDLPVersion:            ytdlpVer,
+		FFmpegVersion:           ffmpegVer,
+		StorageUsageBytes:       storageUsage,
+		DatabaseSizeBytes:       dbSize,
+		TotalTracksCount:        totalTracks,
+		TotalPlaylistsCount:     len(playlists),
+		UserStorageUsageBytes:   userUsage,
+		UserStorageQuotaBytes:   userQuota,
+		HostDiskTotalBytes:      hostTotal,
+		HostDiskUsedBytes:       hostUsed,
+		HostDiskFreeBytes:       hostFree,
+		IsAdmin:                 isAdmin,
 	}, nil
 }
 
@@ -108,6 +159,18 @@ func (u *SettingsUsecase) UpdateSettings(req UpdateSettingsRequest) error {
 		_ = u.settingsRepo.Set("max_concurrent", strconv.Itoa(*req.MaxConcurrent))
 	}
 	return nil
+}
+
+func (u *SettingsUsecase) SetAllowRegistration(allowed bool) error {
+	val := "0"
+	if allowed {
+		val = "1"
+	}
+	return u.settingsRepo.Set("allow_registration", val)
+}
+
+func (u *SettingsUsecase) SetGlobalStorageLimit(bytes int64) error {
+	return u.settingsRepo.Set("global_storage_limit_bytes", strconv.FormatInt(bytes, 10))
 }
 
 func (u *SettingsUsecase) SaveCookies(content []byte) error {

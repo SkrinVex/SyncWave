@@ -13,6 +13,7 @@ import (
 
 type RouterConfig struct {
 	AuthHandler      *handler.AuthHandler
+	AdminHandler     *handler.AdminHandler
 	TrackHandler     *handler.TrackHandler
 	PlaylistHandler  *handler.PlaylistHandler
 	SyncHandler      *handler.SyncHandler
@@ -45,6 +46,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			auth.Get("/status", cfg.AuthHandler.Status)
 			auth.With(authLimiter.Limit).Post("/setup", cfg.AuthHandler.Setup)
 			auth.With(authLimiter.Limit).Post("/login", cfg.AuthHandler.Login)
+			auth.With(authLimiter.Limit).Post("/register", cfg.AuthHandler.Register)
 		})
 
 		// Protected routes
@@ -53,6 +55,20 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 			// Current user profile
 			protected.Get("/auth/me", cfg.AuthHandler.Me)
+
+			// Admin operations (Require admin role)
+			if cfg.AdminHandler != nil {
+				protected.Group(func(admin chi.Router) {
+					admin.Use(cfg.AuthMiddleware.RequireAdmin)
+					admin.Route("/admin", func(adm chi.Router) {
+						adm.Get("/users", cfg.AdminHandler.ListUsers)
+						adm.Put("/users/{id}/quota", cfg.AdminHandler.UpdateUserQuota)
+						adm.Delete("/users/{id}", cfg.AdminHandler.DeleteUser)
+						adm.Post("/registration", cfg.AdminHandler.SetRegistration)
+						adm.Post("/global-limit", cfg.AdminHandler.SetGlobalLimit)
+					})
+				})
+			}
 
 			// Tracks & Streaming
 			protected.Route("/tracks", func(tracks chi.Router) {

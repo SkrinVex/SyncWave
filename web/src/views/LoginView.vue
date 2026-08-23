@@ -19,12 +19,52 @@
 
       <!-- Auth Card -->
       <div class="bg-studio-surface border border-studio-border rounded-2xl p-6 sm:p-8 shadow-xl space-y-6">
+        <!-- Tab Switcher (When not in first-time setup and registration is allowed) -->
+        <div v-if="!authStore.needsSetup && authStore.allowRegistration" class="flex p-1 bg-studio-elevated border border-studio-border rounded-xl">
+          <button
+            type="button"
+            @click="authMode = 'login'"
+            :class="[
+              'flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all',
+              authMode === 'login' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
+            ]"
+          >
+            {{ i18n.t('auth.tabLogin') }}
+          </button>
+          <button
+            type="button"
+            @click="authMode = 'register'"
+            :class="[
+              'flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all',
+              authMode === 'register' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
+            ]"
+          >
+            {{ i18n.t('auth.tabRegister') }}
+          </button>
+        </div>
+
         <div>
           <h2 class="text-base font-semibold text-zinc-100">
-            {{ authStore.needsSetup ? i18n.t('auth.initAdmin') : i18n.t('auth.welcomeBack') }}
+            <template v-if="authStore.needsSetup">
+              {{ i18n.t('auth.initAdmin') }}
+            </template>
+            <template v-else-if="authMode === 'register'">
+              {{ i18n.t('auth.registerTitle') }}
+            </template>
+            <template v-else>
+              {{ i18n.t('auth.welcomeBack') }}
+            </template>
           </h2>
           <p class="text-xs text-zinc-400 mt-0.5">
-            {{ authStore.needsSetup ? i18n.t('auth.initAdminPrompt') : i18n.t('auth.signInPrompt') }}
+            <template v-if="authStore.needsSetup">
+              {{ i18n.t('auth.initAdminPrompt') }}
+            </template>
+            <template v-else-if="authMode === 'register'">
+              {{ i18n.t('auth.registerPrompt') }}
+            </template>
+            <template v-else>
+              {{ i18n.t('auth.signInPrompt') }}
+            </template>
           </p>
         </div>
 
@@ -81,7 +121,17 @@
             class="w-full py-2.5 px-4 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-sm active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
           >
             <span v-if="authStore.loading" class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-            <span>{{ authStore.needsSetup ? i18n.t('auth.createAdminButton') : i18n.t('auth.signInButton') }}</span>
+            <span>
+              <template v-if="authStore.needsSetup">
+                {{ i18n.t('auth.createAdminButton') }}
+              </template>
+              <template v-else-if="authMode === 'register'">
+                {{ i18n.t('auth.registerButton') }}
+              </template>
+              <template v-else>
+                {{ i18n.t('auth.signInButton') }}
+              </template>
+            </span>
           </button>
         </form>
       </div>
@@ -104,6 +154,7 @@ const authStore = useAuthStore()
 const i18n = useI18nStore()
 const toast = useToastStore()
 
+const authMode = ref('login') // 'login' | 'register'
 const username = ref('')
 const password = ref('')
 const showPassword = ref(false)
@@ -115,6 +166,9 @@ async function handleSubmit() {
     if (authStore.needsSetup) {
       await authStore.setupAdmin(username.value, password.value)
       toast.success('Администратор успешно создан!')
+    } else if (authMode.value === 'register') {
+      await authStore.register(username.value, password.value)
+      toast.success('Аккаунт успешно зарегистрирован!')
     } else {
       await authStore.login(username.value, password.value)
       toast.success('Добро пожаловать в SyncWave!')

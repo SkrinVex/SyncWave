@@ -52,7 +52,7 @@ func main() {
 	eventHub := worker.NewEventHub()
 
 	// 3. Worker & Scheduler
-	workerQueue := worker.NewWorkerQueue(ytdlpClient, trackRepo, playlistRepo, logRepo, blacklistRepo, eventHub, 50)
+	workerQueue := worker.NewWorkerQueue(ytdlpClient, trackRepo, playlistRepo, logRepo, blacklistRepo, userRepo, settingsRepo, eventHub, 50)
 	workerQueue.Start()
 	defer workerQueue.Stop()
 	log.Println("[Worker] Background sync queue worker active")
@@ -63,16 +63,17 @@ func main() {
 	log.Println("[Scheduler] Cron auto-sync scheduler active")
 
 	// 4. Usecases
-	authUsecase := usecase.NewAuthUsecase(userRepo, hasher, jwtService)
+	authUsecase := usecase.NewAuthUsecase(userRepo, settingsRepo, hasher, jwtService)
 	trackUsecase := usecase.NewTrackUsecase(trackRepo, blacklistRepo)
 	playlistUsecase := usecase.NewPlaylistUsecase(playlistRepo, ytdlpClient, workerQueue)
 	syncUsecase := usecase.NewSyncUsecase(playlistRepo, logRepo, workerQueue)
-	settingsUsecase := usecase.NewSettingsUsecase(settingsRepo, trackRepo, playlistRepo, ytdlpClient, cfg.DataDir, cfg.DBPath)
+	settingsUsecase := usecase.NewSettingsUsecase(settingsRepo, trackRepo, playlistRepo, userRepo, ytdlpClient, cfg.DataDir, cfg.DBPath)
 	settingsUsecase.InitFromDB()
 
 	// 5. Delivery Handlers & Middlewares
-	authMiddleware := middleware.NewAuthMiddleware(jwtService)
+	authMiddleware := middleware.NewAuthMiddleware(jwtService, userRepo)
 	authHandler := handler.NewAuthHandler(authUsecase)
+	adminHandler := handler.NewAdminHandler(userRepo, settingsUsecase)
 	trackHandler := handler.NewTrackHandler(trackUsecase)
 	playlistHandler := handler.NewPlaylistHandler(playlistUsecase, syncUsecase)
 	syncHandler := handler.NewSyncHandler(syncUsecase, eventHub)
@@ -83,6 +84,7 @@ func main() {
 	// 6. Router Setup
 	httpRouter := deliveryhttp.NewRouter(deliveryhttp.RouterConfig{
 		AuthHandler:      authHandler,
+		AdminHandler:     adminHandler,
 		TrackHandler:     trackHandler,
 		PlaylistHandler:  playlistHandler,
 		SyncHandler:      syncHandler,

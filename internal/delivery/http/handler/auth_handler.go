@@ -27,7 +27,28 @@ func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]bool{"needs_setup": needsSetup})
+	allowReg, _ := h.authUsecase.IsRegistrationAllowed()
+
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"needs_setup":        needsSetup,
+		"allow_registration": allowReg,
+	})
+}
+
+func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	var req authRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Некорректный запрос"})
+		return
+	}
+
+	resp, err := h.authUsecase.Register(req.Username, req.Password)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -22,6 +23,8 @@ type WorkerQueue struct {
 	playlistRepo  domain.PlaylistRepository
 	logRepo       domain.SyncLogRepository
 	blacklistRepo domain.BlacklistRepository
+	userRepo      domain.UserRepository
+	settingsRepo  domain.SettingsRepository
 	eventHub      *EventHub
 
 	taskQueue  chan SyncTask
@@ -40,6 +43,8 @@ func NewWorkerQueue(
 	playlistRepo domain.PlaylistRepository,
 	logRepo domain.SyncLogRepository,
 	blacklistRepo domain.BlacklistRepository,
+	userRepo domain.UserRepository,
+	settingsRepo domain.SettingsRepository,
 	eventHub *EventHub,
 	queueSize int,
 ) *WorkerQueue {
@@ -53,6 +58,8 @@ func NewWorkerQueue(
 		playlistRepo:  playlistRepo,
 		logRepo:       logRepo,
 		blacklistRepo: blacklistRepo,
+		userRepo:      userRepo,
+		settingsRepo:  settingsRepo,
 		eventHub:      eventHub,
 		taskQueue:     make(chan SyncTask, queueSize),
 		ctx:           ctx,
@@ -246,6 +253,33 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			q.log(&playlist.ID, nil, domain.LogLevelWarn, "Синхронизация была прервана пользователем")
 			return
 		default:
+		}
+
+		// Check 1: User Storage Quota
+		if user, err := q.userRepo.GetByID(playlist.UserID); err == nil && user != nil && user.StorageQuotaBytes > 0 {
+			allStats, _ := q.userRepo.ListWithStats()
+			for _, st := range allStats {
+				if st.ID == user.ID && st.StorageUsedBytes >= user.StorageQuotaBytes {
+					msg := fmt.Sprintf("Достигнут лимит дискового пространства пользователя (%d MB / %d MB). Синхронизация приостановлена.", st.StorageUsedBytes/(1024*1024), user.StorageQuotaBytes/(1024*1024))
+					q.log(&playlist.ID, nil, domain.LogLevelWarn, msg)
+					playlist.Status = domain.PlaylistStatusIdle
+					_ = q.playlistRepo.Update(playlist)
+					return
+				}
+			}
+		}
+
+		// Check 2: Global Server Music Limit
+		if globalLimitStr, err := q.settingsRepo.Get("global_storage_limit_bytes"); err == nil && globalLimitStr != "" {
+			if globalLimit, err := strconv.ParseInt(globalLimitStr, 10, 64); err == nil && globalLimit > 0 {
+				if stats, _ := q.trackRepo.GetStats(); stats != nil && stats.TotalStorageSize >= globalLimit {
+					msg := fmt.Sprintf("Достигнут общий лимит хранилища музыки на сервере (%d MB / %d MB). Синхронизация остановлена.", stats.TotalStorageSize/(1024*1024), globalLimit/(1024*1024))
+					q.log(&playlist.ID, nil, domain.LogLevelWarn, msg)
+					playlist.Status = domain.PlaylistStatusIdle
+					_ = q.playlistRepo.Update(playlist)
+					return
+				}
+			}
 		}
 
 		currentIndex := idx + 1

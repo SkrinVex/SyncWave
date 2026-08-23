@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,16 +11,23 @@ import (
 )
 
 type AuthUsecase struct {
-	userRepo   domain.UserRepository
-	hasher     *auth.PasswordHasher
-	jwtService *auth.JWTService
+	userRepo     domain.UserRepository
+	settingsRepo domain.SettingsRepository
+	hasher       *auth.PasswordHasher
+	jwtService   *auth.JWTService
 }
 
-func NewAuthUsecase(userRepo domain.UserRepository, hasher *auth.PasswordHasher, jwtService *auth.JWTService) *AuthUsecase {
+func NewAuthUsecase(
+	userRepo domain.UserRepository,
+	settingsRepo domain.SettingsRepository,
+	hasher *auth.PasswordHasher,
+	jwtService *auth.JWTService,
+) *AuthUsecase {
 	return &AuthUsecase{
-		userRepo:   userRepo,
-		hasher:     hasher,
-		jwtService: jwtService,
+		userRepo:     userRepo,
+		settingsRepo: settingsRepo,
+		hasher:       hasher,
+		jwtService:   jwtService,
 	}
 }
 
@@ -34,6 +42,65 @@ func (u *AuthUsecase) NeedsSetup() (bool, error) {
 		return false, err
 	}
 	return count == 0, nil
+}
+
+func (u *AuthUsecase) IsRegistrationAllowed() (bool, error) {
+	val, err := u.settingsRepo.Get("allow_registration")
+	if err != nil {
+		return false, nil
+	}
+	return val == "1" || val == "true", nil
+}
+
+func (u *AuthUsecase) Register(username, password string) (*AuthResponse, error) {
+	allowed, err := u.IsRegistrationAllowed()
+	if err != nil || !allowed {
+		return nil, errors.New("registration is currently disabled by administrator")
+	}
+
+	if len(username) < 3 || len(password) < 6 {
+		return nil, errors.New("username must be >= 3 characters and password >= 6 characters")
+	}
+
+	// Check if username is taken
+	if existing, _ := u.userRepo.GetByUsername(username); existing != nil {
+		return nil, errors.New("username is already in use")
+	}
+
+	hash, err := u.hasher.Hash(password)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get default user quota
+	defaultQuota := int64(10737418240) // 10 GB
+	if quotaStr, err := u.settingsRepo.Get("default_user_quota_bytes"); err == nil && quotaStr != "" {
+		if q, err := strconv.ParseInt(quotaStr, 10, 64); err == nil && q > 0 {
+			defaultQuota = q
+		}
+	}
+
+	user := &domain.User{
+		ID:                uuid.New().String(),
+		Username:          username,
+		PasswordHash:      hash,
+		IsAdmin:           false,
+		StorageQuotaBytes: defaultQuota,
+	}
+
+	if err := u.userRepo.Create(user); err != nil {
+		return nil, err
+	}
+
+	token, err := u.jwtService.GenerateToken(user, 30*24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AuthResponse{
+		Token: token,
+		User:  *user,
+	}, nil
 }
 
 func (u *AuthUsecase) SetupAdmin(username, password string) (*AuthResponse, error) {
