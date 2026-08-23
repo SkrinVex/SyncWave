@@ -315,15 +315,13 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 
 	args = append(args,
 		"-4",
-		"--add-header", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-		"--add-header", "Accept-Language: ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
 		"--socket-timeout", "15",
 		"-R", "2",
 		"--no-mtime",
 		"--newline",
 		"--no-check-certificates",
 		"--no-warnings",
-		"--extractor-args", "youtube:player_client=android,web;skip=translated_subs",
+		"--extractor-args", "youtube:skip=translated_subs",
 	)
 
 	return args
@@ -344,7 +342,7 @@ func (c *Client) ExtractPlaylistDeltaForUser(ctx context.Context, urlOrID string
 func (c *Client) FetchFlatPlaylistForUser(ctx context.Context, urlOrID string, userID string) (*FlatPlaylistOutput, error) {
 	targetURL := urlOrID
 	if !strings.HasPrefix(urlOrID, "http://") && !strings.HasPrefix(urlOrID, "https://") {
-		targetURL = fmt.Sprintf("https://music.youtube.com/playlist?list=%s", urlOrID)
+		targetURL = fmt.Sprintf("https://www.youtube.com/playlist?list=%s", urlOrID)
 	}
 
 	args := c.buildBaseArgsForUser(userID)
@@ -410,15 +408,13 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 
 	args = append(args,
 		"-4",
-		"--add-header", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-		"--add-header", "Accept-Language: ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
 		"--socket-timeout", "15",
 		"-R", "2",
 		"--no-mtime",
 		"--newline",
 		"--no-check-certificates",
 		"--no-warnings",
-		"--extractor-args", "youtube:player_client=android,web;skip=translated_subs",
+		"--extractor-args", "youtube:skip=translated_subs",
 		"-f", "bestaudio/best",
 		"--extract-audio",
 		"--audio-format", format,
