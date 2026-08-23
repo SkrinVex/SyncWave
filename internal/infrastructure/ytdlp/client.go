@@ -154,42 +154,51 @@ func (c *Client) GetFFmpegVersion() (string, error) {
 
 func (c *Client) GetUserCookiesPath(userID string) string {
 	if userID != "" {
-		return filepath.Join(filepath.Dir(c.cookiesPath), "cookies", fmt.Sprintf("cookies_%s.txt", userID))
+		userPath := filepath.Join(filepath.Dir(c.cookiesPath), "cookies", fmt.Sprintf("cookies_%s.txt", userID))
+		if info, err := os.Stat(userPath); err == nil && info.Size() > 0 {
+			return userPath
+		}
+	}
+	// Fallback to legacy/root cookies file if it exists
+	if info, err := os.Stat(c.cookiesPath); err == nil && info.Size() > 0 {
+		return c.cookiesPath
 	}
 	return c.cookiesPath
 }
 
 func (c *Client) HasUserCookies(userID string) bool {
-	if userID != "" {
-		path := c.GetUserCookiesPath(userID)
-		if info, err := os.Stat(path); err == nil && info.Size() > 0 {
-			return true
-		}
-		return false
+	path := c.GetUserCookiesPath(userID)
+	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+		return true
 	}
-	return c.HasCookies()
+	return false
 }
 
 func (c *Client) GetUserCookiesModTime(userID string) (string, bool) {
-	if userID != "" {
-		path := c.GetUserCookiesPath(userID)
-		if info, err := os.Stat(path); err == nil && info.Size() > 0 {
-			return info.ModTime().Format(time.RFC3339), true
-		}
-		return "", false
+	path := c.GetUserCookiesPath(userID)
+	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+		return info.ModTime().Format(time.RFC3339), true
 	}
-	return c.GetCookiesModTime()
+	return "", false
 }
 
 func (c *Client) SaveUserCookies(userID string, content []byte) error {
-	path := c.GetUserCookiesPath(userID)
+	var path string
+	if userID != "" {
+		path = filepath.Join(filepath.Dir(c.cookiesPath), "cookies", fmt.Sprintf("cookies_%s.txt", userID))
+	} else {
+		path = c.cookiesPath
+	}
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
 	return os.WriteFile(path, content, 0600)
 }
 
 func (c *Client) DeleteUserCookies(userID string) error {
-	path := c.GetUserCookiesPath(userID)
-	return os.Remove(path)
+	if userID != "" {
+		path := filepath.Join(filepath.Dir(c.cookiesPath), "cookies", fmt.Sprintf("cookies_%s.txt", userID))
+		_ = os.Remove(path)
+	}
+	return os.Remove(c.cookiesPath)
 }
 
 func (c *Client) HasCookies() bool {
@@ -222,7 +231,9 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 
 	if c.HasUserCookies(userID) {
 		args = append(args, "--cookies", c.GetUserCookiesPath(userID))
-		args = append(args, "--extractor-args", "youtube:player_skip=configs")
+		args = append(args, "--extractor-args", "youtube:player_client=android_music,web_music,android,web,ios;player_skip=configs")
+	} else {
+		args = append(args, "--extractor-args", "youtube:player_client=android_music,web_music,android,web,ios;player_skip=configs")
 	}
 
 	if c.proxyURL != "" {
@@ -308,7 +319,7 @@ var (
 	progressSimpleRegex = regexp.MustCompile(`\[download\]\s+([\d\.]+)%`)
 )
 
-func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string, userID string, withCookies bool) []string {
+func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string, userID string, withCookies bool, playerClients string) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -326,9 +337,10 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		args = append(args, "--proxy", c.proxyURL)
 	}
 
-	if withCookies {
-		args = append(args, "--extractor-args", "youtube:player_skip=configs")
+	if playerClients == "" {
+		playerClients = "android_music,web_music,android,web,ios"
 	}
+	args = append(args, "--extractor-args", fmt.Sprintf("youtube:player_client=%s;player_skip=configs", playerClients))
 
 	args = append(args,
 		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -368,29 +380,45 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID string, use
 	}
 	c.mu.RUnlock()
 
-	targetURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", youtubeID)
+	musicURL := fmt.Sprintf("https://music.youtube.com/watch?v=%s", youtubeID)
+	standardURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", youtubeID)
 	outTemplate := filepath.Join(c.musicDir, fmt.Sprintf("%s.%%(ext)s", youtubeID))
 
-	// Track-level timeout: max 2 minutes per single track
-	trackCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	// Track-level timeout: max 3 minutes per single track
+	trackCtx, cancel := context.WithTimeout(ctx, 180*time.Second)
 	defer cancel()
 
-	// First attempt: Android player client without cookies
-	res, err := c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, false, onProgress)
+	hasCookies := c.HasUserCookies(userID)
+
+	// Attempt 1: Music client with cookies (if available) or android_music client
+	res, err := c.executeDownloadForUser(trackCtx, youtubeID, musicURL, outTemplate, format, userID, hasCookies, "android_music,web_music,android,web,ios", onProgress)
 	if err == nil {
 		return res, nil
 	}
 
-	// Second attempt (if user cookies exist): Retry with cookies enabled
-	if c.HasUserCookies(userID) && ctx.Err() == nil {
-		return c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, true, onProgress)
+	// Attempt 2: If Attempt 1 failed, try standard YouTube URL with android/ios/web clients
+	if trackCtx.Err() == nil {
+		res, err2 := c.executeDownloadForUser(trackCtx, youtubeID, standardURL, outTemplate, format, userID, hasCookies, "android,ios,web,mweb", onProgress)
+		if err2 == nil {
+			return res, nil
+		}
+		err = err2
+	}
+
+	// Attempt 3: If cookies were used, try without cookies on android/ios
+	if hasCookies && trackCtx.Err() == nil {
+		res, err3 := c.executeDownloadForUser(trackCtx, youtubeID, musicURL, outTemplate, format, userID, false, "android_music,android,ios", onProgress)
+		if err3 == nil {
+			return res, nil
+		}
+		err = err3
 	}
 
 	return nil, err
 }
 
-func (c *Client) executeDownloadForUser(ctx context.Context, youtubeID, targetURL, outTemplate, format string, userID string, withCookies bool, onProgress ProgressCallback) (*DownloadResult, error) {
-	args := c.buildDownloadArgsForUser(targetURL, outTemplate, format, userID, withCookies)
+func (c *Client) executeDownloadForUser(ctx context.Context, youtubeID, targetURL, outTemplate, format string, userID string, withCookies bool, playerClients string, onProgress ProgressCallback) (*DownloadResult, error) {
+	args := c.buildDownloadArgsForUser(targetURL, outTemplate, format, userID, withCookies, playerClients)
 
 	cmd := exec.CommandContext(ctx, c.ytdlpPath, args...)
 	stdoutPipe, err := cmd.StdoutPipe()

@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -317,6 +318,31 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		_ = q.trackRepo.Create(initialTrack)
 
 		q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelInfo, fmt.Sprintf("[%d/%d] Fetching audio & tags: %s", currentIndex, totalToDownload, trackTitle))
+
+		// Check if physical audio file already exists on server disk from previous syncs or other libraries
+		if existingTrack, _ := q.trackRepo.GetByYouTubeID(entry.GetID(), ""); existingTrack != nil && existingTrack.FilePath != "" {
+			if fi, err := os.Stat(existingTrack.FilePath); err == nil && fi.Size() > 1024 {
+				initialTrack.Title = existingTrack.Title
+				initialTrack.Artist = existingTrack.Artist
+				initialTrack.Album = existingTrack.Album
+				initialTrack.Duration = existingTrack.Duration
+				initialTrack.FilePath = existingTrack.FilePath
+				initialTrack.CoverPath = existingTrack.CoverPath
+				initialTrack.FileSize = fi.Size()
+				initialTrack.Format = existingTrack.Format
+				initialTrack.Bitrate = existingTrack.Bitrate
+				initialTrack.Status = domain.TrackStatusReady
+				initialTrack.ErrorMessage = ""
+				downloadedTime := time.Now().UTC()
+				initialTrack.DownloadedAt = &downloadedTime
+				_ = q.trackRepo.Update(initialTrack)
+
+				successCount++
+				q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelSuccess, fmt.Sprintf("Archived (reused local file): %s - %s", initialTrack.Artist, initialTrack.Title))
+				q.eventHub.Broadcast(EventMessage{Type: EventTypeTrack, Data: initialTrack})
+				continue
+			}
+		}
 
 		// Download track via yt-dlp using user's session
 		res, dlErr := q.ytdlpClient.DownloadTrackForUser(taskCtx, entry.GetID(), playlist.UserID, func(percent float64, speed, eta, status string) {
