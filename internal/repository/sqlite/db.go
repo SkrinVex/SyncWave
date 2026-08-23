@@ -108,6 +108,13 @@ func (db *DB) Migrate() error {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_sync_logs_created_at ON sync_logs(created_at DESC);
+
+	CREATE TABLE IF NOT EXISTS blacklist (
+		youtube_id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		artist TEXT NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 
 	_, err := db.Exec(schema)

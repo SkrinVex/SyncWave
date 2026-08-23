@@ -43,6 +43,7 @@ func main() {
 	playlistRepo := sqlite.NewPlaylistRepository(db)
 	settingsRepo := sqlite.NewSettingsRepository(db)
 	logRepo := sqlite.NewSyncLogRepository(db)
+	blacklistRepo := sqlite.NewBlacklistRepo(db)
 
 	// 2. Infrastructure Services
 	hasher := auth.NewPasswordHasher()
@@ -51,7 +52,7 @@ func main() {
 	eventHub := worker.NewEventHub()
 
 	// 3. Worker & Scheduler
-	workerQueue := worker.NewWorkerQueue(ytdlpClient, trackRepo, playlistRepo, logRepo, eventHub, 50)
+	workerQueue := worker.NewWorkerQueue(ytdlpClient, trackRepo, playlistRepo, logRepo, blacklistRepo, eventHub, 50)
 	workerQueue.Start()
 	defer workerQueue.Stop()
 	log.Println("[Worker] Background sync queue worker active")
@@ -63,7 +64,7 @@ func main() {
 
 	// 4. Usecases
 	authUsecase := usecase.NewAuthUsecase(userRepo, hasher, jwtService)
-	trackUsecase := usecase.NewTrackUsecase(trackRepo)
+	trackUsecase := usecase.NewTrackUsecase(trackRepo, blacklistRepo)
 	playlistUsecase := usecase.NewPlaylistUsecase(playlistRepo, ytdlpClient, workerQueue)
 	syncUsecase := usecase.NewSyncUsecase(playlistRepo, logRepo, workerQueue)
 	settingsUsecase := usecase.NewSettingsUsecase(settingsRepo, trackRepo, playlistRepo, ytdlpClient, cfg.DataDir, cfg.DBPath)
@@ -77,17 +78,19 @@ func main() {
 	syncHandler := handler.NewSyncHandler(syncUsecase, eventHub)
 	settingsHandler := handler.NewSettingsHandler(settingsUsecase)
 	streamHandler := handler.NewStreamHandler(trackUsecase)
+	blacklistHandler := handler.NewBlacklistHandler(blacklistRepo)
 
 	// 6. Router Setup
 	httpRouter := deliveryhttp.NewRouter(deliveryhttp.RouterConfig{
-		AuthHandler:     authHandler,
-		TrackHandler:    trackHandler,
-		PlaylistHandler: playlistHandler,
-		SyncHandler:     syncHandler,
-		SettingsHandler: settingsHandler,
-		StreamHandler:   streamHandler,
-		AuthMiddleware:  authMiddleware,
-		EmbedFS:         web.DistFS,
+		AuthHandler:      authHandler,
+		TrackHandler:     trackHandler,
+		PlaylistHandler:  playlistHandler,
+		SyncHandler:      syncHandler,
+		SettingsHandler:  settingsHandler,
+		StreamHandler:    streamHandler,
+		BlacklistHandler: blacklistHandler,
+		AuthMiddleware:   authMiddleware,
+		EmbedFS:          web.DistFS,
 	})
 
 	serverAddr := fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)

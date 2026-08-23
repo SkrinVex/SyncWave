@@ -11,14 +11,15 @@ import (
 )
 
 type RouterConfig struct {
-	AuthHandler     *handler.AuthHandler
-	TrackHandler    *handler.TrackHandler
-	PlaylistHandler *handler.PlaylistHandler
-	SyncHandler     *handler.SyncHandler
-	SettingsHandler *handler.SettingsHandler
-	StreamHandler   *handler.StreamHandler
-	AuthMiddleware  *middleware.AuthMiddleware
-	EmbedFS         fs.FS
+	AuthHandler      *handler.AuthHandler
+	TrackHandler     *handler.TrackHandler
+	PlaylistHandler  *handler.PlaylistHandler
+	SyncHandler      *handler.SyncHandler
+	SettingsHandler  *handler.SettingsHandler
+	StreamHandler    *handler.StreamHandler
+	BlacklistHandler *handler.BlacklistHandler
+	AuthMiddleware   *middleware.AuthMiddleware
+	EmbedFS          fs.FS
 }
 
 func NewRouter(cfg RouterConfig) http.Handler {
@@ -85,6 +86,12 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				settings.Post("/cookies", cfg.SettingsHandler.UploadCookies)
 				settings.Delete("/cookies", cfg.SettingsHandler.DeleteCookies)
 				settings.Post("/test-proxy", cfg.SettingsHandler.TestProxy)
+			})
+
+			// Blacklist
+			protected.Route("/blacklist", func(bl chi.Router) {
+				bl.Get("/", cfg.BlacklistHandler.List)
+				bl.Delete("/{id}", cfg.BlacklistHandler.Delete)
 			})
 		})
 	})

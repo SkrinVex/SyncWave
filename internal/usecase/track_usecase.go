@@ -7,12 +7,14 @@ import (
 )
 
 type TrackUsecase struct {
-	trackRepo domain.TrackRepository
+	trackRepo     domain.TrackRepository
+	blacklistRepo domain.BlacklistRepository
 }
 
-func NewTrackUsecase(trackRepo domain.TrackRepository) *TrackUsecase {
+func NewTrackUsecase(trackRepo domain.TrackRepository, blacklistRepo domain.BlacklistRepository) *TrackUsecase {
 	return &TrackUsecase{
-		trackRepo: trackRepo,
+		trackRepo:     trackRepo,
+		blacklistRepo: blacklistRepo,
 	}
 }
 
@@ -34,6 +36,13 @@ func (u *TrackUsecase) Delete(id string) error {
 		return err
 	}
 
+	// Add to blacklist before deletion
+	_ = u.blacklistRepo.Add(&domain.BlacklistItem{
+		YouTubeID: track.YouTubeID,
+		Title:     track.Title,
+		Artist:    track.Artist,
+	})
+
 	// Remove physical files
 	if track.FilePath != "" {
 		_ = os.Remove(track.FilePath)
@@ -48,6 +57,13 @@ func (u *TrackUsecase) Delete(id string) error {
 func (u *TrackUsecase) BatchDelete(ids []string) error {
 	for _, id := range ids {
 		if track, err := u.trackRepo.GetByID(id); err == nil && track != nil {
+			// Add to blacklist before deletion
+			_ = u.blacklistRepo.Add(&domain.BlacklistItem{
+				YouTubeID: track.YouTubeID,
+				Title:     track.Title,
+				Artist:    track.Artist,
+			})
+
 			if track.FilePath != "" {
 				_ = os.Remove(track.FilePath)
 			}

@@ -234,6 +234,61 @@
     </div>
 
     <!-- Confirmation Modal for Delete Cookies -->
+    <!-- Section 5: Dangerous Operations (Cookies, Blacklist) -->
+    <div class="space-y-4">
+      <h3 class="text-base font-semibold text-zinc-100">{{ i18n.t('settings.dangerZone') || 'Дополнительно' }}</h3>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Blacklist Section -->
+        <section class="bg-studio-surface border border-studio-border rounded-xl overflow-hidden shadow-sm flex flex-col justify-between">
+          <div class="p-6">
+            <h3 class="font-medium text-zinc-100 flex items-center gap-2">
+              <svg class="w-4 h-4 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+              </svg>
+              Чёрный список
+            </h3>
+            <p class="text-sm text-zinc-400 mt-2">
+              Удаленные треки попадают в чёрный список, чтобы не скачиваться заново. Здесь вы можете убрать их из списка.
+            </p>
+          </div>
+          <div class="px-6 py-4 bg-studio-elevated/30 border-t border-studio-border">
+            <button
+              @click="showBlacklist = true"
+              class="px-4 py-2 bg-studio-elevated hover:bg-studio-hover border border-studio-border rounded-lg text-sm font-medium transition-colors w-full"
+            >
+              Управление списком
+            </button>
+          </div>
+        </section>
+
+        <!-- Danger Zone Cookies -->
+        <section class="bg-studio-surface border border-rose-900/50 rounded-xl overflow-hidden shadow-sm flex flex-col justify-between">
+          <div class="p-6">
+            <h3 class="font-medium text-rose-400 flex items-center gap-2">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4m0 4h.01"/>
+              </svg>
+              Удаление Cookies
+            </h3>
+            <p class="text-sm text-zinc-400 mt-2">
+              Очистить текущие cookies из базы данных и файловой системы. Это прервёт авторизацию yt-dlp.
+            </p>
+          </div>
+          <div class="px-6 py-4 bg-rose-950/20 border-t border-rose-900/30">
+            <button
+              @click="showDeleteCookiesConfirm = true"
+              class="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-sm font-medium transition-colors w-full"
+            >
+              Удалить Cookies
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <BlacklistModal :open="showBlacklist" @close="showBlacklist = false" />
+
     <ConfirmModal
       :open="showDeleteCookiesConfirm"
       :title="i18n.t('confirm.deleteCookiesTitle')"
@@ -253,6 +308,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
 import { useI18nStore } from '../stores/i18n'
 import ConfirmModal from '../components/ConfirmModal.vue'
+import BlacklistModal from '../components/BlacklistModal.vue'
 
 const settingsStore = useSettingsStore()
 const toast = useToastStore()
@@ -265,6 +321,7 @@ const maxConcurrent = ref(2)
 const testingProxy = ref(false)
 const showProxyHelp = ref(false)
 const showDeleteCookiesConfirm = ref(false)
+const showBlacklist = ref(false)
 
 onMounted(async () => {
   await settingsStore.fetchSettings()

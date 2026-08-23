@@ -17,11 +17,12 @@ type SyncTask struct {
 }
 
 type WorkerQueue struct {
-	ytdlpClient  *ytdlp.Client
-	trackRepo    domain.TrackRepository
-	playlistRepo domain.PlaylistRepository
-	logRepo      domain.SyncLogRepository
-	eventHub     *EventHub
+	ytdlpClient   *ytdlp.Client
+	trackRepo     domain.TrackRepository
+	playlistRepo  domain.PlaylistRepository
+	logRepo       domain.SyncLogRepository
+	blacklistRepo domain.BlacklistRepository
+	eventHub      *EventHub
 
 	taskQueue  chan SyncTask
 	isSyncing  bool
@@ -38,6 +39,7 @@ func NewWorkerQueue(
 	trackRepo domain.TrackRepository,
 	playlistRepo domain.PlaylistRepository,
 	logRepo domain.SyncLogRepository,
+	blacklistRepo domain.BlacklistRepository,
 	eventHub *EventHub,
 	queueSize int,
 ) *WorkerQueue {
@@ -46,14 +48,15 @@ func NewWorkerQueue(
 	_ = trackRepo.CleanBrokenTracks()
 
 	return &WorkerQueue{
-		ytdlpClient:  ytdlpClient,
-		trackRepo:    trackRepo,
-		playlistRepo: playlistRepo,
-		logRepo:      logRepo,
-		eventHub:     eventHub,
-		taskQueue:    make(chan SyncTask, queueSize),
-		ctx:          ctx,
-		cancel:       cancel,
+		ytdlpClient:   ytdlpClient,
+		trackRepo:     trackRepo,
+		playlistRepo:  playlistRepo,
+		logRepo:       logRepo,
+		blacklistRepo: blacklistRepo,
+		eventHub:      eventHub,
+		taskQueue:     make(chan SyncTask, queueSize),
+		ctx:           ctx,
+		cancel:        cancel,
 	}
 }
 
@@ -211,13 +214,24 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 
 	// Identify missing tracks to download
 	missingEntries := make([]ytdlp.PlaylistEntry, 0)
+	blacklistedCount := 0
+
 	for _, id := range extractedIDs {
 		if !existingMap[id] {
+			// Check if blacklisted
+			blacklisted, err := q.blacklistRepo.Exists(id)
+			if err != nil {
+				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Blacklist check error for %s: %v", id, err))
+			}
+			if blacklisted {
+				blacklistedCount++
+				continue
+			}
 			missingEntries = append(missingEntries, entryMap[id])
 		}
 	}
 
-	q.log(&playlist.ID, nil, domain.LogLevelInfo, fmt.Sprintf("Delta identified: %d new tracks to download (skipped %d existing)", len(missingEntries), len(extractedIDs)-len(missingEntries)))
+	q.log(&playlist.ID, nil, domain.LogLevelInfo, fmt.Sprintf("Delta identified: %d new tracks to download (skipped %d existing, %d blacklisted)", len(missingEntries), len(extractedIDs)-len(missingEntries)-blacklistedCount, blacklistedCount))
 
 	// Step 3: Download missing tracks sequentially with rate-limit protection
 	totalToDownload := len(missingEntries)
