@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuthStore } from './auth'
 
 export const useTracksStore = defineStore('tracks', () => {
