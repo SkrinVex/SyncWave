@@ -1,12 +1,13 @@
 # SyncWave 🌊
 
-> **Self-hosted сервис для автоматической синхронизации, резервного копирования и стриминга треков из YouTube Music на ваш личный сервер.**  
+> **Self-hosted сервис для автоматической синхронизации, резервного копирования и стриминга треков из YouTube Music на ваш личный сервер.**
 > *Полная независимость от облаков и стримингов, высокое качество звука, единый бинарник и стильный веб-интерфейс.*
 
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat-square&logo=go)](https://golang.org)
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?style=flat-square&logo=vuedotjs)](https://vuejs.org)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL-003B57?style=flat-square&logo=sqlite)](https://sqlite.org)
 [![Docker Ready](https://img.shields.io/badge/Docker-Multi--Stage-2496ED?style=flat-square&logo=docker)](https://docker.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![Clean Architecture](https://img.shields.io/badge/Architecture-Clean-indigo?style=flat-square)]()
 
 ---
@@ -38,7 +39,7 @@ graph TD
         Router["Chi HTTP Router & SSE Hub"]
         AuthMid["JWT Auth Middleware"]
         StaticFS["embed.FS Web SPA"]
-        
+      
         subgraph "Clean Architecture Core"
             Usecases["Track / Playlist / Sync / Settings Usecases"]
             WorkerQueue["Очередь воркеров & Cron Планировщик"]
@@ -77,12 +78,14 @@ graph TD
 Самый простой способ развернуть SyncWave на сервере:
 
 1. Создайте файл конфигурации `.env` (или скопируйте его из `.env.example`):
+
 ```bash
 cp .env.example .env
 # Отредактируйте .env, чтобы изменить порт или JWT_SECRET, если нужно
 ```
 
 2. В `docker-compose.yml` убедитесь, что он выглядит так:
+
 ```yaml
 # docker-compose.yml
 services:
@@ -99,6 +102,7 @@ services:
 ```
 
 Запуск:
+
 ```bash
 docker compose up -d --build
 ```
@@ -112,6 +116,7 @@ docker compose up -d --build
 При развертывании SyncWave через **Coolify** (или другие PaaS), крайне важно настроить постоянное хранилище (Persistent Storage), чтобы музыка и база данных не удалились после обновления контейнера.
 
 В панели настроек сервиса перейдите во вкладку **Storage** (Хранилище) и привяжите Volume:
+
 - **Source** (на хосте): `syncwave_data` (имя вольюма) или абсолютный путь на сервере (например, `/opt/coolify/syncwave/data`)
 - **Destination** (в контейнере): `/data`
 
@@ -122,11 +127,13 @@ docker compose up -d --build
 ## 🛠️ Локальная сборка без Docker (Single Binary)
 
 ### Системные требования:
+
 - **Go 1.24+**
 - **Node.js 20+** и **npm**
 - Установленные в системе `yt-dlp` и `ffmpeg`
 
 ### 1. Сборка фронтенда:
+
 ```bash
 cd web
 npm install
@@ -135,11 +142,13 @@ cd ..
 ```
 
 ### 2. Сборка Go-бинарника:
+
 ```bash
 go build -o syncwave cmd/server/main.go
 ```
 
 ### 3. Запуск:
+
 ```bash
 PORT=8080 DATA_DIR=./data ./syncwave
 ```
@@ -161,14 +170,15 @@ PORT=8080 DATA_DIR=./data ./syncwave
 
 ## 🎹 Горячие клавиши веб-плеера
 
-| Клавиша | Действие |
-| :--- | :--- |
-| <kbd>Space</kbd> | Воспроизведение / Пауза |
-| <kbd>←</kbd> / <kbd>→</kbd> | Перемотка назад / вперед на 5 сек |
-| <kbd>↑</kbd> / <kbd>↓</kbd> | Громкость выше / ниже на 5% |
-| <kbd>M</kbd> | Включить / выключить звук |
-| <kbd>L</kbd> | Режим повтора (Выкл / Все / Один трек) |
-| <kbd>S</kbd> | Перемешать очередь (Shuffle) |
+
+| Клавиша                | Действие                                                  |
+| :---------------------------- | :---------------------------------------------------------------- |
+| <kbd>Space</kbd>              | Воспроизведение / Пауза                       |
+| <kbd>←</kbd> / <kbd>→</kbd> | Перемотка назад / вперед на 5 сек        |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Громкость выше / ниже на 5%                    |
+| <kbd>M</kbd>                  | Включить / выключить звук                    |
+| <kbd>L</kbd>                  | Режим повтора (Выкл / Все / Один трек) |
+| <kbd>S</kbd>                  | Перемешать очередь (Shuffle)                     |
 
 ---
 
@@ -222,4 +232,4 @@ SyncWave/
 
 ## 📄 Лицензия
 
-MIT License © 2026 SyncWave.
+MIT License © 2026 SkrinVex.
