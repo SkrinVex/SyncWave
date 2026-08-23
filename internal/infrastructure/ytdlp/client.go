@@ -321,7 +321,9 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 		"--newline",
 		"--no-check-certificates",
 		"--no-warnings",
-		"--extractor-args", "youtube:player_client=android,ios;skip=translated_subs",
+		"--js-runtimes", "node",
+		"--remote-components", "ejs:github",
+		"--extractor-args", "youtube:skip=translated_subs",
 	)
 
 	return args
@@ -414,7 +416,9 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--newline",
 		"--no-check-certificates",
 		"--no-warnings",
-		"--extractor-args", "youtube:player_client=android,ios;skip=translated_subs",
+		"--js-runtimes", "node",
+		"--remote-components", "ejs:github",
+		"--extractor-args", "youtube:skip=translated_subs",
 		"-f", "bestaudio/best",
 		"--extract-audio",
 		"--audio-format", format,
