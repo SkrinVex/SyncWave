@@ -274,6 +274,7 @@ function closePlayer() {
   playerStore.pause()
   playerStore.currentTrack = null
   playerStore.queue = []
+  playerStore.clearMediaSession()
 }
 </script>
 

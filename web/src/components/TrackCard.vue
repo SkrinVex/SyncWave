@@ -28,6 +28,30 @@
         />
       </div>
 
+      <!-- Playing / Loading Indicator Overlay (Top Right) -->
+      <div v-if="isCurrentTrack" class="absolute top-2 right-2 z-10 flex items-center justify-center p-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 shadow-sm">
+        <template v-if="playerStore.isLoading">
+          <!-- Spinner -->
+          <svg class="w-3.5 h-3.5 text-indigo-400 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+        </template>
+        <template v-else-if="playerStore.isPlaying">
+          <!-- Equalizer Animation -->
+          <div class="flex items-end gap-[2px] h-3.5">
+            <div class="w-1 bg-indigo-400 rounded-sm animate-[eq_0.8s_ease-in-out_infinite_alternate]" style="animation-delay: -0.4s"></div>
+            <div class="w-1 bg-indigo-400 rounded-sm animate-[eq_0.8s_ease-in-out_infinite_alternate]" style="animation-delay: -0.2s"></div>
+            <div class="w-1 bg-indigo-400 rounded-sm animate-[eq_0.8s_ease-in-out_infinite_alternate]"></div>
+          </div>
+        </template>
+        <template v-else>
+          <!-- Paused indicator -->
+          <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 4h4v16H6zm8 0h4v16h-4z"/>
+          </svg>
+        </template>
+      </div>
+
       <!-- Hover Play Overlay -->
       <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
         <div class="w-11 h-11 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-transform">
@@ -147,6 +171,8 @@ defineEmits(['play', 'delete', 'toggle-select'])
 
 const tracksStore = useTracksStore()
 const playerStore = usePlayerStore()
+
+const isCurrentTrack = computed(() => playerStore.currentTrack?.id === props.track.id)
 
 const isCurrentAndPlaying = computed(() => {
   return playerStore.currentTrack?.id === props.track.id && playerStore.isPlaying

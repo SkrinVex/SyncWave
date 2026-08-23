@@ -20,9 +20,14 @@ export const usePlayerStore = defineStore('player', () => {
   const queue = ref([])
   const queueIndex = ref(-1)
   const isQueueOpen = ref(false)
+  const isLoading = ref(false)
 
   // Audio setup
   audio.volume = volume.value
+
+  audio.addEventListener('waiting', () => isLoading.value = true)
+  audio.addEventListener('playing', () => isLoading.value = false)
+  audio.addEventListener('canplay', () => isLoading.value = false)
 
   audio.addEventListener('timeupdate', () => {
     currentTime.value = audio.currentTime
@@ -80,10 +85,23 @@ export const usePlayerStore = defineStore('player', () => {
     navigator.mediaSession.setActionHandler('previoustrack', () => prev())
     navigator.mediaSession.setActionHandler('nexttrack', () => next())
     navigator.mediaSession.setActionHandler('seekto', (details) => {
-      if (details.seekTime !== undefined) {
+      if (details.fastSeek && 'fastSeek' in audio) {
+        audio.fastSeek(details.seekTime)
+      } else {
         seek(details.seekTime)
       }
     })
+  }
+
+  function clearMediaSession() {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.metadata = null
+      navigator.mediaSession.setActionHandler('play', null)
+      navigator.mediaSession.setActionHandler('pause', null)
+      navigator.mediaSession.setActionHandler('previoustrack', null)
+      navigator.mediaSession.setActionHandler('nexttrack', null)
+      navigator.mediaSession.setActionHandler('seekto', null)
+    }
   }
 
   function playTrack(track, newQueue = null) {
@@ -102,9 +120,13 @@ export const usePlayerStore = defineStore('player', () => {
     }
 
     currentTrack.value = track
+    isLoading.value = true
     const streamUrl = tracksStore.getTrackStreamUrl(track)
     audio.src = streamUrl
-    audio.play().catch(e => console.error('Play failed:', e))
+    audio.play().catch(e => {
+      console.error('Play failed:', e)
+      isLoading.value = false
+    })
     isPlaying.value = true
     setupMediaSession(track)
   }
@@ -240,6 +262,7 @@ export const usePlayerStore = defineStore('player', () => {
     queue,
     queueIndex,
     isQueueOpen,
+    isLoading,
     playTrack,
     togglePlay,
     play,
@@ -255,6 +278,7 @@ export const usePlayerStore = defineStore('player', () => {
     playNext,
     removeFromQueue,
     clearQueue,
+    clearMediaSession,
   }
 })
 

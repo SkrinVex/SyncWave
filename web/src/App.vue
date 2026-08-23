@@ -5,7 +5,10 @@
 
     <!-- Main Dashboard Application -->
     <template v-else>
-      <div class="flex-1 flex overflow-hidden">
+      <div
+        class="flex-1 flex overflow-hidden transition-all duration-300"
+        :class="{ 'pb-20': playerStore.currentTrack }"
+      >
         <!-- Desktop Sidebar -->
         <Sidebar
           class="hidden md:flex"

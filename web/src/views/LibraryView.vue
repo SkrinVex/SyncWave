@@ -179,13 +179,13 @@
     <div v-else class="bg-studio-surface border border-studio-border rounded-xl overflow-hidden p-2 space-y-1">
       <div class="flex items-center gap-3 md:gap-4 px-3 md:px-4 py-2 text-[11px] font-mono text-zinc-500 uppercase tracking-wider select-none border-b border-studio-borderSubtle">
         <span class="w-4"></span>
-        <span class="w-6 text-center">#</span>
+        <span class="hidden md:block w-6 text-center">#</span>
         <span class="w-10"></span>
         <span class="flex-1">Название и Исполнитель</span>
         <span class="hidden md:block w-1/4">Альбом</span>
         <span class="hidden lg:block">Формат</span>
         <span class="w-12 text-right">Время</span>
-        <span class="w-20"></span>
+        <span class="hidden md:block w-20"></span>
       </div>
       <TrackRow
         v-for="(track, idx) in tracksStore.tracks"

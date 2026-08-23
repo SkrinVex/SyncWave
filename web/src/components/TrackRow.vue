@@ -20,22 +20,17 @@
     </div>
 
     <!-- Index / Play Button -->
-    <div class="w-6 text-center shrink-0">
-      <span v-if="!isCurrentPlaying" class="font-mono text-xs text-zinc-400 group-hover:hidden">
+    <div class="hidden md:block w-6 text-center shrink-0">
+      <span class="font-mono text-xs text-zinc-400 group-hover:hidden" :class="{ 'text-indigo-400': isCurrentTrack }">
         {{ index }}
       </span>
-      <span v-else class="text-indigo-400 flex items-center justify-center">
-        <svg class="w-4 h-4 animate-pulse" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2v20M17 5v14M22 8v8M7 8v8M2 11v2"/>
-        </svg>
-      </span>
-      <span class="text-indigo-400 hidden group-hover:block" v-if="!isCurrentPlaying">
+      <span class="text-indigo-400 hidden group-hover:block">
         ▶
       </span>
     </div>
 
     <!-- Cover Thumbnail -->
-    <div class="w-10 h-10 rounded-md overflow-hidden bg-studio-elevated border border-studio-borderSubtle shrink-0">
+    <div class="relative w-10 h-10 rounded-md overflow-hidden bg-studio-elevated border border-studio-borderSubtle shrink-0">
       <img
         :src="tracksStore.getTrackCoverUrl(track)"
         :alt="track.title"
@@ -43,6 +38,26 @@
         loading="lazy"
         @error="onImageError"
       />
+      <!-- Playing / Loading Indicator Overlay -->
+      <div v-if="isCurrentTrack" class="absolute inset-0 bg-black/60 flex items-center justify-center">
+        <template v-if="playerStore.isLoading">
+          <svg class="w-4 h-4 text-indigo-400 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+        </template>
+        <template v-else-if="playerStore.isPlaying">
+          <div class="flex items-end gap-[1.5px] h-3">
+            <div class="w-[2.5px] bg-indigo-400 rounded-sm animate-[eq_0.8s_ease-in-out_infinite_alternate]" style="animation-delay: -0.4s"></div>
+            <div class="w-[2.5px] bg-indigo-400 rounded-sm animate-[eq_0.8s_ease-in-out_infinite_alternate]" style="animation-delay: -0.2s"></div>
+            <div class="w-[2.5px] bg-indigo-400 rounded-sm animate-[eq_0.8s_ease-in-out_infinite_alternate]"></div>
+          </div>
+        </template>
+        <template v-else>
+          <svg class="w-4 h-4 text-indigo-400 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </template>
+      </div>
     </div>
 
     <!-- Title & Artist -->
@@ -71,7 +86,7 @@
     </div>
 
     <!-- Actions Menu -->
-    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+    <div class="hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
       <button
         @click.stop="playerStore.playNext(track)"
         title="Play Next"

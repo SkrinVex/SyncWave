@@ -100,6 +100,18 @@
 
     <!-- Bottom Actions & User Profile -->
     <div class="p-3 border-t border-studio-borderSubtle space-y-3">
+      <!-- Install PWA Button -->
+      <button
+        v-if="deferredPrompt"
+        @click="installPwa"
+        class="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-colors md:hidden"
+      >
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+        <span>Установить приложение</span>
+      </button>
+
       <!-- Quick Sync Trigger Button -->
       <button
         @click="triggerQuickSync"
@@ -142,6 +154,7 @@
 </template>
 
 <script setup>
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useTracksStore } from '../stores/tracks'
 import { usePlaylistsStore } from '../stores/playlists'
@@ -164,6 +177,30 @@ const playlistsStore = usePlaylistsStore()
 const syncStore = useSyncStore()
 const toast = useToastStore()
 const i18n = useI18nStore()
+
+const deferredPrompt = ref(null)
+
+const handleInstallPrompt = (e) => {
+  e.preventDefault()
+  deferredPrompt.value = e
+}
+
+onMounted(() => {
+  window.addEventListener('beforeinstallprompt', handleInstallPrompt)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('beforeinstallprompt', handleInstallPrompt)
+})
+
+async function installPwa() {
+  if (!deferredPrompt.value) return
+  deferredPrompt.value.prompt()
+  const { outcome } = await deferredPrompt.value.userChoice
+  if (outcome === 'accepted') {
+    deferredPrompt.value = null
+  }
+}
 
 async function triggerQuickSync() {
   const ok = await syncStore.triggerSyncAll()
