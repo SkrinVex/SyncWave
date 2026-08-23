@@ -13,10 +13,11 @@ import (
 type EventType string
 
 const (
-	EventTypeProgress EventType = "progress"
-	EventTypeLog      EventType = "log"
-	EventTypeTrack    EventType = "track_updated"
-	EventTypePlaylist EventType = "playlist_updated"
+	EventTypeProgress     EventType = "progress"
+	EventTypeLog          EventType = "log"
+	EventTypeTrack        EventType = "track_updated"
+	EventTypePlaylist     EventType = "playlist_updated"
+	EventTypeCookieStatus EventType = "cookie_status"
 )
 
 type EventMessage struct {

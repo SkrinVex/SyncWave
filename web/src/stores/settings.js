@@ -12,6 +12,9 @@ export const useSettingsStore = defineStore('settings', () => {
     max_concurrent: 2,
     has_cookies: false,
     cookies_valid: false,
+    cookies_status: 'missing',
+    cookies_expires_at: '',
+    cookies_error: '',
     cookies_updated_at: '',
     ytdlp_version: '',
     ffmpeg_version: '',
@@ -19,8 +22,15 @@ export const useSettingsStore = defineStore('settings', () => {
     database_size_bytes: 0,
     total_tracks_count: 0,
     total_playlists_count: 0,
+    user_storage_usage_bytes: 0,
+    user_storage_quota_bytes: 0,
+    host_disk_total_bytes: 0,
+    host_disk_used_bytes: 0,
+    host_disk_free_bytes: 0,
+    is_admin: false,
   })
   const loading = ref(false)
+  const showCookieModal = ref(false)
 
   async function fetchSettings() {
     loading.value = true
@@ -115,6 +125,7 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     settings,
     loading,
+    showCookieModal,
     fetchSettings,
     updateSettings,
     uploadCookies,

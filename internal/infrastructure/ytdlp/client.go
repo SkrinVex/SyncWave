@@ -126,6 +126,10 @@ func (c *Client) SetAudioFormat(format string) {
 	c.audioFormat = format
 }
 
+func (c *Client) GetMusicDir() string {
+	return c.musicDir
+}
+
 func (c *Client) GetYTDLPVersion() (string, error) {
 	cmd := exec.Command(c.ytdlpPath, "--version")
 	out, err := cmd.Output()
@@ -218,6 +222,11 @@ func (c *Client) SaveCookies(content []byte) error {
 	return os.WriteFile(c.cookiesPath, content, 0600)
 }
 
+func (c *Client) ValidateUserCookies(userID string) *CookieValidationResult {
+	path := c.GetUserCookiesPath(userID)
+	return ValidateCookieFile(path)
+}
+
 func (c *Client) buildBaseArgsForUser(userID string) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -239,6 +248,7 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 	args = append(args,
 		"--geo-bypass",
 		"--geo-bypass-country", "US",
+		"--extractor-args", "youtube:player_client=web,mweb,android",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
@@ -281,11 +291,11 @@ func (c *Client) FetchFlatPlaylistForUser(ctx context.Context, urlOrID string, u
 
 	if err := cmd.Run(); err != nil {
 		stdErrStr := stderr.String()
-		if strings.Contains(stdErrStr, "429") {
-			return nil, fmt.Errorf("YouTube rate limit (HTTP 429). Please configure residential proxy in Settings: %s", stdErrStr)
+		if isAuth, reason := IsYTDLPAuthError(stdErrStr); isAuth {
+			return nil, fmt.Errorf("Требуется авторизация YouTube: %s", reason)
 		}
-		if strings.Contains(stdErrStr, "Private video") || strings.Contains(stdErrStr, "Sign in") {
-			return nil, fmt.Errorf("Playlist requires authentication. Please upload cookies.txt in Settings: %s", stdErrStr)
+		if strings.Contains(stdErrStr, "429") {
+			return nil, fmt.Errorf("Лимит запросов YouTube (HTTP 429). Настройте прокси в Настройках: %s", stdErrStr)
 		}
 		return nil, fmt.Errorf("yt-dlp flat playlist error: %w (stderr: %s)", err, stdErrStr)
 	}
@@ -339,7 +349,7 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--newline",
 		"--geo-bypass",
 		"--geo-bypass-country", "US",
-		"--extractor-args", "youtube:player_client=android,ios,mweb",
+		"--extractor-args", "youtube:player_client=web,mweb,android",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
@@ -450,7 +460,11 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 
 	cmdErr := cmd.Wait()
 	if cmdErr != nil {
-		return nil, fmt.Errorf("download failed: %w (stderr: %s)", cmdErr, stderrBuf.String())
+		stdErrStr := stderrBuf.String()
+		if isAuth, reason := IsYTDLPAuthError(stdErrStr); isAuth {
+			return nil, fmt.Errorf("Ошибка авторизации YouTube (%s): %s", reason, stdErrStr)
+		}
+		return nil, fmt.Errorf("download failed: %w (stderr: %s)", cmdErr, stdErrStr)
 	}
 
 	youtubeID := targetTrackID

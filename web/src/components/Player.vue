@@ -73,7 +73,10 @@
           class="w-10 h-10 rounded-full bg-zinc-100 text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-md"
           title="Play / Pause (Space)"
         >
-          <svg v-if="playerStore.isPlaying" class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+          <svg v-if="playerStore.isLoading" class="w-5 h-5 text-indigo-600 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+          <svg v-else-if="playerStore.isPlaying" class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
             <path d="M6 4h4v16H6zm8 0h4v16h-4z"/>
           </svg>
           <svg v-else class="w-5 h-5 ml-0.5" viewBox="0 0 24 24" fill="currentColor">

@@ -3,11 +3,13 @@ import { ref } from 'vue'
 import { useAuthStore } from './auth'
 import { useTracksStore } from './tracks'
 import { usePlaylistsStore } from './playlists'
+import { useSettingsStore } from './settings'
 
 export const useSyncStore = defineStore('sync', () => {
   const authStore = useAuthStore()
   const tracksStore = useTracksStore()
   const playlistsStore = usePlaylistsStore()
+  const settingsStore = useSettingsStore()
 
   const progress = ref({
     active: false,
@@ -58,6 +60,15 @@ export const useSyncStore = defineStore('sync', () => {
           tracksStore.fetchStats()
         } else if (payload.type === 'playlist_updated') {
           playlistsStore.fetchPlaylists()
+        } else if (payload.type === 'cookie_status') {
+          if (payload.data) {
+            settingsStore.settings.cookies_status = payload.data.status || 'expired'
+            settingsStore.settings.cookies_valid = payload.data.is_valid || false
+            settingsStore.settings.cookies_error = payload.data.error_reason || ''
+            if (!payload.data.is_valid || payload.data.status === 'expired') {
+              settingsStore.showCookieModal = true
+            }
+          }
         }
       } catch (e) {
         console.error('Failed to parse SSE event:', e)

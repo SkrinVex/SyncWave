@@ -202,6 +202,10 @@ export const useI18nStore = defineStore('i18n', () => {
         next: 'Следующий трек',
         playPause: 'Воспроизведение / Пауза (Пробел)',
       },
+      cookiesModal: {
+        title: 'Обновление YouTube Cookies',
+        subtitle: 'Авторизация в YouTube Music для скачивания треков и плейлистов',
+      },
       confirm: {
         title: 'Подтверждение',
         cancel: 'Отмена',
@@ -411,6 +415,10 @@ export const useI18nStore = defineStore('i18n', () => {
         prev: 'Previous Track',
         next: 'Next Track',
         playPause: 'Play / Pause (Space)',
+      },
+      cookiesModal: {
+        title: 'Update YouTube Cookies',
+        subtitle: 'YouTube Music authentication for playlist and track synchronization',
       },
       confirm: {
         title: 'Confirmation',

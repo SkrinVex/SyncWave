@@ -116,7 +116,7 @@ func TestTrackAndPlaylistRepository(t *testing.T) {
 	}
 
 	// Delta lookup test
-	existing, err := trackRepo.GetExistingYouTubeIDs([]string{"yt-101", "yt-102", "yt-999"})
+	existing, err := trackRepo.GetExistingYouTubeIDs([]string{"yt-101", "yt-102", "yt-999"}, "")
 	if err != nil {
 		t.Fatalf("delta query failed: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestTrackAndPlaylistRepository(t *testing.T) {
 	}
 
 	// Stats test
-	stats, err := trackRepo.GetStats()
+	stats, err := trackRepo.GetStats("")
 	if err != nil {
 		t.Fatalf("stats failed: %v", err)
 	}

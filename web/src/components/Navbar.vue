@@ -35,6 +35,26 @@
 
     <!-- Right: Telemetry, Sync Indicator & Stats -->
     <div class="flex items-center gap-3">
+      <!-- Cookie Status Warning / Action Pill -->
+      <div
+        v-if="settingsStore.settings.cookies_status === 'expired' || settingsStore.settings.cookies_status === 'invalid'"
+        @click="settingsStore.showCookieModal = true"
+        class="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/70 border border-rose-800 text-rose-300 text-xs hover:bg-rose-900/70 transition-colors animate-pulse shadow-sm"
+        title="Нажмите, чтобы обновить cookies.txt"
+      >
+        <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+        <span class="font-medium text-[11px]">Cookies истекли</span>
+      </div>
+      <div
+        v-else-if="settingsStore.settings.cookies_status === 'expiring_soon'"
+        @click="settingsStore.showCookieModal = true"
+        class="cursor-pointer hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/70 border border-amber-800 text-amber-300 text-xs hover:bg-amber-900/70 transition-colors shadow-sm"
+        title="Нажмите, чтобы обновить cookies.txt"
+      >
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+        <span class="font-medium text-[11px]">Обновите cookies</span>
+      </div>
+
       <!-- Live Sync Pill (when active) -->
       <div
         v-if="syncStore.progress.active"
@@ -70,6 +90,7 @@ import { computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useTracksStore } from '../stores/tracks'
 import { useSyncStore } from '../stores/sync'
+import { useSettingsStore } from '../stores/settings'
 import { useI18nStore } from '../stores/i18n'
 
 defineEmits(['toggle-mobile-menu', 'open-sync'])
@@ -77,6 +98,7 @@ defineEmits(['toggle-mobile-menu', 'open-sync'])
 const authStore = useAuthStore()
 const tracksStore = useTracksStore()
 const syncStore = useSyncStore()
+const settingsStore = useSettingsStore()
 const i18n = useI18nStore()
 
 const userQuota = computed(() => {

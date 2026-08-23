@@ -1,9 +1,11 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useTracksStore } from './tracks'
+import { useToastStore } from './toast'
 
 export const usePlayerStore = defineStore('player', () => {
   const tracksStore = useTracksStore()
+  const toast = useToastStore()
 
   const audio = new Audio()
   audio.preload = 'auto'
@@ -25,12 +27,38 @@ export const usePlayerStore = defineStore('player', () => {
   // Audio setup
   audio.volume = volume.value
 
-  audio.addEventListener('waiting', () => isLoading.value = true)
-  audio.addEventListener('playing', () => isLoading.value = false)
-  audio.addEventListener('canplay', () => isLoading.value = false)
+  audio.addEventListener('loadstart', () => {
+    isLoading.value = true
+  })
+
+  audio.addEventListener('waiting', () => {
+    isLoading.value = true
+  })
+
+  audio.addEventListener('playing', () => {
+    isLoading.value = false
+    isPlaying.value = true
+  })
+
+  audio.addEventListener('canplay', () => {
+    isLoading.value = false
+  })
+
+  audio.addEventListener('canplaythrough', () => {
+    isLoading.value = false
+  })
+
+  audio.addEventListener('stalled', () => {
+    if (!isPlaying.value) {
+      isLoading.value = false
+    }
+  })
 
   audio.addEventListener('timeupdate', () => {
     currentTime.value = audio.currentTime
+    if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
+      duration.value = audio.duration
+    }
     if (audio.buffered.length > 0) {
       const end = audio.buffered.end(audio.buffered.length - 1)
       buffered.value = duration.value > 0 ? (end / duration.value) * 100 : 0
@@ -38,13 +66,18 @@ export const usePlayerStore = defineStore('player', () => {
   })
 
   audio.addEventListener('loadedmetadata', () => {
-    duration.value = audio.duration || (currentTrack.value ? currentTrack.value.duration : 0)
+    if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
+      duration.value = audio.duration
+    } else if (currentTrack.value && currentTrack.value.duration) {
+      duration.value = currentTrack.value.duration
+    }
+    isLoading.value = false
   })
 
   audio.addEventListener('ended', () => {
     if (loopMode.value === 'one') {
       audio.currentTime = 0
-      audio.play()
+      audio.play().catch(e => console.error('Loop restart failed:', e))
     } else {
       next()
     }
@@ -59,8 +92,12 @@ export const usePlayerStore = defineStore('player', () => {
   })
 
   audio.addEventListener('error', (e) => {
-    console.error('Audio playback error:', e)
+    console.error('Audio playback error:', e, audio.error)
+    isLoading.value = false
     isPlaying.value = false
+    if (currentTrack.value) {
+      toast.error(`Не удалось воспроизвести: ${currentTrack.value.title || 'трек'}`)
+    }
   })
 
   function setupMediaSession(track) {
@@ -107,7 +144,7 @@ export const usePlayerStore = defineStore('player', () => {
   function playTrack(track, newQueue = null) {
     if (!track) return
 
-    if (newQueue) {
+    if (newQueue && Array.isArray(newQueue) && newQueue.length > 0) {
       queue.value = [...newQueue]
       queueIndex.value = queue.value.findIndex(t => t.id === track.id)
       if (queueIndex.value === -1) {
@@ -117,17 +154,42 @@ export const usePlayerStore = defineStore('player', () => {
     } else if (queue.value.length === 0) {
       queue.value = [track]
       queueIndex.value = 0
+    } else {
+      const idx = queue.value.findIndex(t => t.id === track.id)
+      if (idx !== -1) {
+        queueIndex.value = idx
+      } else {
+        queue.value.splice(queueIndex.value + 1, 0, track)
+        queueIndex.value = queueIndex.value + 1
+      }
     }
 
-    currentTrack.value = track
+    // Immediately update reactive track metadata in UI
+    currentTrack.value = { ...track }
+    currentTime.value = 0
+    duration.value = track.duration || 0
+    buffered.value = 0
     isLoading.value = true
+    isPlaying.value = true
+
     const streamUrl = tracksStore.getTrackStreamUrl(track)
     audio.src = streamUrl
-    audio.play().catch(e => {
-      console.error('Play failed:', e)
-      isLoading.value = false
-    })
-    isPlaying.value = true
+    audio.currentTime = 0
+
+    const playPromise = audio.play()
+    if (playPromise !== undefined) {
+      playPromise.then(() => {
+        isLoading.value = false
+        isPlaying.value = true
+      }).catch(e => {
+        if (e.name !== 'AbortError') {
+          console.error('Play failed:', e)
+          isPlaying.value = false
+        }
+        isLoading.value = false
+      })
+    }
+
     setupMediaSession(track)
   }
 
@@ -142,12 +204,20 @@ export const usePlayerStore = defineStore('player', () => {
     if (isPlaying.value) {
       audio.pause()
     } else {
-      audio.play().catch(e => console.error('Resume failed:', e))
+      const p = audio.play()
+      if (p !== undefined) {
+        p.catch(e => console.error('Resume failed:', e))
+      }
     }
   }
 
   function play() {
-    if (currentTrack.value) audio.play()
+    if (currentTrack.value) {
+      const p = audio.play()
+      if (p !== undefined) {
+        p.catch(e => console.error('Play failed:', e))
+      }
+    }
   }
 
   function pause() {
@@ -156,8 +226,9 @@ export const usePlayerStore = defineStore('player', () => {
 
   function seek(seconds) {
     if (isNaN(seconds)) return
-    audio.currentTime = seconds
-    currentTime.value = seconds
+    const safeSec = Math.max(0, Math.min(seconds, duration.value || 999999))
+    audio.currentTime = safeSec
+    currentTime.value = safeSec
   }
 
   function setVolume(val) {
@@ -295,4 +366,3 @@ export const usePlayerStore = defineStore('player', () => {
     clearMediaSession,
   }
 })
-

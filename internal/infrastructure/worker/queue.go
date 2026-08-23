@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,6 +54,25 @@ func NewWorkerQueue(
 	ctx, cancel := context.WithCancel(context.Background())
 	// On startup, clean up any unfinished/broken tracks from previous crashes
 	_ = trackRepo.CleanBrokenTracks()
+
+	// Clean up any incomplete .part or .ytdl files left on disk from interrupted downloads
+	if musicDir := ytdlpClient.GetMusicDir(); musicDir != "" {
+		if partFiles, err := filepath.Glob(filepath.Join(musicDir, "*.part")); err == nil {
+			for _, f := range partFiles {
+				_ = os.Remove(f)
+			}
+		}
+		if ytdlFiles, err := filepath.Glob(filepath.Join(musicDir, "*.ytdl")); err == nil {
+			for _, f := range ytdlFiles {
+				_ = os.Remove(f)
+			}
+		}
+		if tempFiles, err := filepath.Glob(filepath.Join(musicDir, "*.temp")); err == nil {
+			for _, f := range tempFiles {
+				_ = os.Remove(f)
+			}
+		}
+	}
 
 	return &WorkerQueue{
 		ytdlpClient:   ytdlpClient,
@@ -194,6 +214,18 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		_ = q.playlistRepo.Update(playlist)
 		q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Playlist extraction failed: %v", err))
 		q.eventHub.Broadcast(EventMessage{Type: EventTypePlaylist, Data: playlist})
+
+		if isAuth, reason := ytdlp.IsYTDLPAuthError(err.Error()); isAuth || strings.Contains(err.Error(), "авторизация") {
+			q.eventHub.Broadcast(EventMessage{
+				Type: EventTypeCookieStatus,
+				Data: map[string]interface{}{
+					"status":       "expired",
+					"is_valid":     false,
+					"has_cookies":  true,
+					"error_reason": reason,
+				},
+			})
+		}
 		return
 	}
 
@@ -370,7 +402,18 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			_ = q.trackRepo.Delete(initialTrack.ID, playlist.UserID)
 
 			errMsg := dlErr.Error()
-			if strings.Contains(errMsg, "removed") || strings.Contains(errMsg, "terminated") || strings.Contains(errMsg, "hate speech") || strings.Contains(errMsg, "copyright") || strings.Contains(errMsg, "no longer available") {
+			if isAuth, reason := ytdlp.IsYTDLPAuthError(errMsg); isAuth || strings.Contains(errMsg, "авторизация") {
+				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека %s: %s", trackTitle, reason))
+				q.eventHub.Broadcast(EventMessage{
+					Type: EventTypeCookieStatus,
+					Data: map[string]interface{}{
+						"status":       "expired",
+						"is_valid":     false,
+						"has_cookies":  true,
+						"error_reason": reason,
+					},
+				})
+			} else if strings.Contains(errMsg, "removed") || strings.Contains(errMsg, "terminated") || strings.Contains(errMsg, "hate speech") || strings.Contains(errMsg, "copyright") || strings.Contains(errMsg, "no longer available") {
 				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен недоступный на YouTube трек [%s]: удален правообладателем или заблокирован платформой", trackTitle))
 			} else {
 				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка загрузки %s: %v", trackTitle, dlErr))

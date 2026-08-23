@@ -74,6 +74,12 @@
         @created="onPlaylistCreated"
       />
 
+      <!-- YouTube Cookies Expired / Upload Modal -->
+      <CookieExpiredModal
+        :open="settingsStore.showCookieModal"
+        @close="settingsStore.showCookieModal = false"
+      />
+
       <!-- Custom Confirm Modal for Sign Out -->
       <ConfirmModal
         :open="showSignOutConfirm"
@@ -111,6 +117,7 @@ import Navbar from './components/Navbar.vue'
 import Player from './components/Player.vue'
 import QueueDrawer from './components/QueueDrawer.vue'
 import AddPlaylistModal from './components/AddPlaylistModal.vue'
+import CookieExpiredModal from './components/CookieExpiredModal.vue'
 import SyncProgressBar from './components/SyncProgressBar.vue'
 import ConfirmModal from './components/ConfirmModal.vue'
 import Toast from './components/Toast.vue'
@@ -148,6 +155,7 @@ watch(() => authStore.isAuthenticated, (isAuth) => {
     playlistsStore.fetchPlaylists()
     tracksStore.fetchTracks()
     tracksStore.fetchStats()
+    settingsStore.fetchSettings()
   } else {
     syncStore.disconnectSSE()
   }

@@ -18,6 +18,9 @@ type SystemSettings struct {
 	DefaultUserQuotaBytes   int64  `json:"default_user_quota_bytes"`
 	HasCookies              bool   `json:"has_cookies"`
 	CookiesValid            bool   `json:"cookies_valid"`
+	CookiesStatus           string `json:"cookies_status"` // valid, expiring_soon, expired, missing, invalid
+	CookiesExpiresAt        string `json:"cookies_expires_at,omitempty"`
+	CookiesError            string `json:"cookies_error,omitempty"`
 	CookiesUpdatedAt        string `json:"cookies_updated_at,omitempty"`
 	YTDLPVersion            string `json:"ytdlp_version"`
 	FFmpegVersion           string `json:"ffmpeg_version"`

@@ -35,14 +35,24 @@ func (h *StreamHandler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 		dir := filepath.Dir(filePath)
 		baseName := track.YouTubeID
 		if baseName != "" {
+			validExts := map[string]bool{
+				".opus": true, ".m4a": true, ".mp3": true,
+				".flac": true, ".webm": true, ".ogg": true,
+				".aac": true, ".mp4": true, ".wav": true,
+			}
 			matches, _ := filepath.Glob(filepath.Join(dir, fmt.Sprintf("%s.*", baseName)))
 			for _, m := range matches {
-				if ext := filepath.Ext(m); ext != ".jpg" && ext != ".webp" && ext != ".png" {
+				ext := filepath.Ext(m)
+				if validExts[ext] {
 					if altFile, altErr := os.Open(m); altErr == nil {
-						file = altFile
-						filePath = m
-						err = nil
-						break
+						if fi, fiErr := altFile.Stat(); fiErr == nil && fi.Size() > 1024 {
+							file = altFile
+							filePath = m
+							err = nil
+							break
+						} else {
+							altFile.Close()
+						}
 					}
 				}
 			}
@@ -65,8 +75,10 @@ func (h *StreamHandler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 	ext := filepath.Ext(filePath)
 	contentType := "audio/ogg"
 	switch ext {
-	case ".opus", ".ogg":
+	case ".opus":
 		contentType = "audio/ogg; codecs=opus"
+	case ".ogg":
+		contentType = "audio/ogg"
 	case ".m4a", ".mp4", ".aac":
 		contentType = "audio/mp4"
 	case ".mp3":
@@ -75,11 +87,13 @@ func (h *StreamHandler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 		contentType = "audio/flac"
 	case ".webm":
 		contentType = "audio/webm"
+	case ".wav":
+		contentType = "audio/wav"
 	}
 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Accept-Ranges", "bytes")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
 
 	http.ServeContent(w, r, filepath.Base(filePath), stat.ModTime(), file)
 }

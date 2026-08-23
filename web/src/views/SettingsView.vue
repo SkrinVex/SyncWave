@@ -43,10 +43,22 @@
           <div class="flex items-center gap-2.5">
             <h3 class="text-base font-semibold text-zinc-100">{{ i18n.t('settings.cookiesTitle') }}</h3>
             <span
-              v-if="settingsStore.settings.has_cookies"
+              v-if="settingsStore.settings.cookies_status === 'valid'"
               class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800"
             >
               {{ i18n.t('settings.cookiesActive') }}
+            </span>
+            <span
+              v-else-if="settingsStore.settings.cookies_status === 'expiring_soon'"
+              class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950 text-amber-300 border border-amber-800"
+            >
+              СКОРО ИСТЕКУТ
+            </span>
+            <span
+              v-else-if="settingsStore.settings.cookies_status === 'expired' || settingsStore.settings.cookies_status === 'invalid'"
+              class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-950 text-rose-300 border border-rose-800 animate-pulse"
+            >
+              ИСТЕКЛИ / ТРЕБУЕТСЯ ОБНОВЛЕНИЕ
             </span>
             <span
               v-else
@@ -58,6 +70,18 @@
           <p class="text-xs text-zinc-400 mt-1 leading-relaxed">
             {{ i18n.t('settings.cookiesDesc') }}
           </p>
+          <div
+            v-if="settingsStore.settings.cookies_error"
+            class="mt-2 p-2.5 rounded-lg bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs font-mono"
+          >
+            ⚠️ {{ settingsStore.settings.cookies_error }}
+          </div>
+          <div
+            v-if="settingsStore.settings.cookies_expires_at"
+            class="mt-1 text-[11px] font-mono text-zinc-400"
+          >
+            Срок действия: {{ formatDateTime(settingsStore.settings.cookies_expires_at) }}
+          </div>
         </div>
       </div>
 

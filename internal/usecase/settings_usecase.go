@@ -70,9 +70,13 @@ func (u *SettingsUsecase) GetSystemSettings(userID string) (*domain.SystemSettin
 	ytdlpVer, _ := u.ytdlpClient.GetYTDLPVersion()
 	ffmpegVer, _ := u.ytdlpClient.GetFFmpegVersion()
 
-	// User-specific cookies
-	hasCookies := u.ytdlpClient.HasUserCookies(userID)
+	// User-specific cookies validation
+	cookieVal := u.ytdlpClient.ValidateUserCookies(userID)
 	cookiesMod, _ := u.ytdlpClient.GetUserCookiesModTime(userID)
+	var expiresAtStr string
+	if cookieVal.ExpiresAt != nil {
+		expiresAtStr = cookieVal.ExpiresAt.Format(time.RFC3339)
+	}
 
 	stats, _ := u.trackRepo.GetStats(userID)
 	playlists, _ := u.playlistRepo.ListByUserID(userID)
@@ -128,8 +132,11 @@ func (u *SettingsUsecase) GetSystemSettings(userID string) (*domain.SystemSettin
 		AllowRegistration:       allowReg,
 		GlobalStorageLimitBytes: globalLimit,
 		DefaultUserQuotaBytes:   defaultQuota,
-		HasCookies:              hasCookies,
-		CookiesValid:            hasCookies,
+		HasCookies:              cookieVal.HasCookies,
+		CookiesValid:            cookieVal.IsValid,
+		CookiesStatus:           string(cookieVal.Status),
+		CookiesExpiresAt:        expiresAtStr,
+		CookiesError:            cookieVal.ErrorReason,
 		CookiesUpdatedAt:        cookiesMod,
 		YTDLPVersion:            ytdlpVer,
 		FFmpegVersion:           ffmpegVer,
