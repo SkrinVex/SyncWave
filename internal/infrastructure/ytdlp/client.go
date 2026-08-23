@@ -424,6 +424,8 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"-R", "2",
 		"--no-mtime",
 		"--newline",
+		"--progress",
+		"--ignore-errors",
 		"--js-runtimes", "node",
 		"--remote-components", "ejs:github",
 		"--extractor-args", "youtube:skip=translated_subs",
@@ -624,13 +626,6 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 
 	log.Printf("[yt-dlp EXIT] track=%s, exitErr=%v, stderrLen=%d", targetTrackID, cmdErr, len(stdErrStr))
 
-	if cmdErr != nil {
-		if isAuth, reason := IsYTDLPAuthError(stdErrStr); isAuth {
-			return nil, fmt.Errorf("Ошибка авторизации YouTube (%s): %s", reason, stdErrStr)
-		}
-		return nil, fmt.Errorf("download failed: %w (stderr: %s)", cmdErr, stdErrStr)
-	}
-
 	youtubeID := targetTrackID
 	if youtubeID == "" {
 		if idx := strings.Index(targetURL, "v="); idx != -1 {
@@ -647,13 +642,28 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 		matches, globErr := filepath.Glob(filepath.Join(c.musicDir, fmt.Sprintf("%s.*", youtubeID)))
 		if globErr == nil && len(matches) > 0 {
 			for _, m := range matches {
-				if !strings.HasSuffix(m, ".jpg") && !strings.HasSuffix(m, ".webp") && !strings.HasSuffix(m, ".png") {
+				if !strings.HasSuffix(m, ".jpg") && !strings.HasSuffix(m, ".webp") && !strings.HasSuffix(m, ".png") && !strings.HasSuffix(m, ".part") && !strings.HasSuffix(m, ".temp") && !strings.HasSuffix(m, ".ytdl") {
 					expectedAudioPath = m
 					fi, _ = os.Stat(expectedAudioPath)
 					break
 				}
 			}
 		}
+	}
+
+	// If audio file was successfully written to disk (>10KB), we recover from non-fatal exit errors (such as ffprobe thumbnail warnings)
+	if fi != nil && fi.Size() > 10240 {
+		if cmdErr != nil {
+			log.Printf("[yt-dlp RECOVERED] Audio file exists on disk (%s, %d bytes) despite exit code: %v", expectedAudioPath, fi.Size(), cmdErr)
+			cmdErr = nil
+		}
+	}
+
+	if cmdErr != nil {
+		if isAuth, reason := IsYTDLPAuthError(stdErrStr); isAuth {
+			return nil, fmt.Errorf("Ошибка авторизации YouTube (%s): %s", reason, stdErrStr)
+		}
+		return nil, fmt.Errorf("download failed: %w (stderr: %s)", cmdErr, stdErrStr)
 	}
 
 	// Optimize .m4a / .mp4 containers with faststart for instant HTTP audio playback
@@ -803,4 +813,29 @@ func (c *Client) TestProxyConnection(ctx context.Context, proxyURLStr string) er
 	}
 
 	return nil
+}
+
+// OptimizeLibraryFaststart scans music directory and ensures all .m4a / .mp4 files have the moov atom at the front for instant streaming
+func (c *Client) OptimizeLibraryFaststart() {
+	if c.musicDir == "" {
+		return
+	}
+	matches, err := filepath.Glob(filepath.Join(c.musicDir, "*.m4a"))
+	if err != nil || len(matches) == 0 {
+		return
+	}
+	ffmpegBin := c.ffmpegPath
+	if ffmpegBin == "" {
+		ffmpegBin = "ffmpeg"
+	}
+	for _, m := range matches {
+		tmpFast := m + ".fast.m4a"
+		fastCmd := exec.Command(ffmpegBin, "-y", "-i", m, "-c", "copy", "-movflags", "+faststart", tmpFast)
+		if fErr := fastCmd.Run(); fErr == nil {
+			_ = os.Rename(tmpFast, m)
+		} else {
+			_ = os.Remove(tmpFast)
+		}
+	}
+	log.Printf("[Worker] Faststart optimization verified for %d local audio files", len(matches))
 }

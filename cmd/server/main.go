@@ -49,6 +49,7 @@ func main() {
 	hasher := auth.NewPasswordHasher()
 	jwtService := auth.NewJWTService(cfg.JWTSecret)
 	ytdlpClient := ytdlp.NewClient(cfg.YtDlpPath, cfg.FFmpegPath, cfg.CookiesPath, cfg.MusicDir, cfg.CoversDir)
+	go ytdlpClient.OptimizeLibraryFaststart()
 	eventHub := worker.NewEventHub()
 
 	// 3. Worker & Scheduler

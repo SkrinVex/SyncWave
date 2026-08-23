@@ -8,7 +8,7 @@ export const usePlayerStore = defineStore('player', () => {
   const toast = useToastStore()
 
   const audio = new Audio()
-  audio.preload = 'metadata'
+  audio.preload = 'auto'
 
   const currentTrack = ref(null)
   const isPlaying = ref(false)
@@ -174,7 +174,6 @@ export const usePlayerStore = defineStore('player', () => {
 
     const streamUrl = tracksStore.getTrackStreamUrl(track)
     audio.src = streamUrl
-    audio.currentTime = 0
 
     const playPromise = audio.play()
     if (playPromise !== undefined) {
