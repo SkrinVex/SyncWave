@@ -30,28 +30,28 @@
 ```mermaid
 graph TD
     subgraph "Внешние сервисы"
-        YTM[YouTube Music API / Web]
-        Proxy[HTTP / SOCKS5 Прокси (Опционально)]
+        YTM["YouTube Music API / Web"]
+        Proxy["HTTP / SOCKS5 Прокси (Опционально)"]
     end
 
     subgraph "SyncWave Server (Go Binary)"
-        Router[Chi HTTP Router & SSE Hub]
-        AuthMid[JWT Auth Middleware]
-        StaticFS[embed.FS Web SPA]
+        Router["Chi HTTP Router & SSE Hub"]
+        AuthMid["JWT Auth Middleware"]
+        StaticFS["embed.FS Web SPA"]
         
         subgraph "Clean Architecture Core"
-            Usecases[Track / Playlist / Sync / Settings Usecases]
-            WorkerQueue[Очередь воркеров & Cron Планировщик]
-            YTDLPWrapper[yt-dlp + FFmpeg Exec Engine]
-            SQLiteRepo[SQLite Репозиторий WAL Mode]
+            Usecases["Track / Playlist / Sync / Settings Usecases"]
+            WorkerQueue["Очередь воркеров & Cron Планировщик"]
+            YTDLPWrapper["yt-dlp + FFmpeg Exec Engine"]
+            SQLiteRepo["SQLite Репозиторий WAL Mode"]
         end
     end
 
     subgraph "Хранилище и Клиенты"
-        DBFile[(SQLite: /data/syncwave.db)]
-        MusicDir[Музыка и Обложки: /data/music & /data/covers]
-        WebUI[Vue 3 Studio Web App]
-        Android[Android App / ExoPlayer]
+        DBFile[("SQLite: /data/syncwave.db")]
+        MusicDir["Музыка и Обложки: /data/music & /data/covers"]
+        WebUI["Vue 3 Studio Web App"]
+        Android["Android App / ExoPlayer"]
     end
 
     YTM -->|--flat-playlist delta| YTDLPWrapper
@@ -104,6 +104,18 @@ docker compose up -d --build
 ```
 
 Откройте браузер по адресу **`http://localhost:8080`** и задайте логин/пароль администратора при первом входе.
+
+---
+
+## ☁️ Развертывание в Coolify / Portainer
+
+При развертывании SyncWave через **Coolify** (или другие PaaS), крайне важно настроить постоянное хранилище (Persistent Storage), чтобы музыка и база данных не удалились после обновления контейнера.
+
+В панели настроек сервиса перейдите во вкладку **Storage** (Хранилище) и привяжите Volume:
+- **Source** (на хосте): `syncwave_data` (имя вольюма) или абсолютный путь на сервере (например, `/opt/coolify/syncwave/data`)
+- **Destination** (в контейнере): `/data`
+
+В директории `/data` внутри контейнера хранится **абсолютно всё**: база данных `syncwave.db`, кэш обложек и сама скачанная музыка (`/data/music`). Сохранив эту папку, вы ничего не потеряете!
 
 ---
 
