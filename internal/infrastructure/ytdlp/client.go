@@ -479,24 +479,43 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 		err = err2
 	}
 
-	// Attempt 3: If direct video ID failed (e.g. removed/unavailable) but title is known, search alternative
+	// Attempt 3: If direct video ID failed (e.g. removed/unavailable/blocked) but title is known, search alternative
 	if trackCtx.Err() == nil && title != "" && title != youtubeID {
-		searchQuery := title
 		cleanA := CleanArtist(artist)
-		if cleanA != "" && !strings.Contains(strings.ToLower(title), strings.ToLower(cleanA)) {
-			searchQuery = fmt.Sprintf("%s %s", cleanA, title)
+		cleanT := CleanTitle(title)
+		if cleanT == "" {
+			cleanT = title
+		}
+		searchQuery := cleanT
+		if cleanA != "" && !strings.Contains(strings.ToLower(cleanT), strings.ToLower(cleanA)) {
+			searchQuery = fmt.Sprintf("%s %s", cleanA, cleanT)
 		}
 		searchURL := fmt.Sprintf("ytsearch1:%s", searchQuery)
-		res3, err3 := c.executeDownloadForUser(trackCtx, youtubeID, searchURL, outTemplate, format, userID, false, onProgress)
-		if err3 == nil {
-			res3.ID = youtubeID
-			if res3.Title == "" || res3.Title == "Unknown Title" {
-				res3.Title = title
+
+		if hasCookies {
+			res3, err3 := c.executeDownloadForUser(trackCtx, youtubeID, searchURL, outTemplate, format, userID, true, onProgress)
+			if err3 == nil {
+				res3.ID = youtubeID
+				if res3.Title == "" || res3.Title == "Unknown Title" {
+					res3.Title = cleanT
+				}
+				if res3.Artist == "" || res3.Artist == "Unknown Artist" {
+					res3.Artist = cleanA
+				}
+				return res3, nil
 			}
-			if res3.Artist == "" || res3.Artist == "Unknown Artist" {
-				res3.Artist = artist
+		}
+
+		res4, err4 := c.executeDownloadForUser(trackCtx, youtubeID, searchURL, outTemplate, format, userID, false, onProgress)
+		if err4 == nil {
+			res4.ID = youtubeID
+			if res4.Title == "" || res4.Title == "Unknown Title" {
+				res4.Title = cleanT
 			}
-			return res3, nil
+			if res4.Artist == "" || res4.Artist == "Unknown Artist" {
+				res4.Artist = cleanA
+			}
+			return res4, nil
 		}
 	}
 

@@ -409,16 +409,20 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			_ = q.trackRepo.Delete(initialTrack.ID, playlist.UserID)
 
 			errMsg := dlErr.Error()
-			isUnavailable := strings.Contains(errMsg, "removed") ||
-				strings.Contains(errMsg, "terminated") ||
-				strings.Contains(errMsg, "hate speech") ||
-				strings.Contains(errMsg, "copyright") ||
-				strings.Contains(errMsg, "no longer available") ||
-				strings.Contains(errMsg, "Video unavailable") ||
-				strings.Contains(errMsg, "Private video") ||
-				strings.Contains(errMsg, "Join this channel") ||
-				strings.Contains(errMsg, "members-only") ||
-				strings.Contains(errMsg, "blocked")
+			errLower := strings.ToLower(errMsg)
+			isUnavailable := strings.Contains(errLower, "not available") ||
+				strings.Contains(errLower, "video unavailable") ||
+				strings.Contains(errLower, "removed") ||
+				strings.Contains(errLower, "terminated") ||
+				strings.Contains(errLower, "hate speech") ||
+				strings.Contains(errLower, "copyright") ||
+				strings.Contains(errLower, "no longer available") ||
+				strings.Contains(errLower, "private video") ||
+				strings.Contains(errLower, "granted access") ||
+				strings.Contains(errLower, "join this channel") ||
+				strings.Contains(errLower, "members-only") ||
+				strings.Contains(errLower, "blocked") ||
+				strings.Contains(errLower, "restricted")
 
 			if isUnavailable {
 				// Automatically save into user's blacklist so future syncs skip this nonexistent track instantly!
@@ -430,7 +434,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 				})
 				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен и занесен в черный список недоступный на YouTube трек [%s - %s] (%s)", trackArtist, trackTitle, entry.GetID()))
 			} else if isAuth, reason := ytdlp.IsYTDLPAuthError(errMsg); isAuth || strings.Contains(errMsg, "авторизация") {
-				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека %s: %s", trackTitle, reason))
+				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека [%s - %s]: %s", trackArtist, trackTitle, reason))
 				// Only broadcast cookie status if cookies on disk are genuinely expired/invalid
 				valRes := q.ytdlpClient.ValidateUserCookies(playlist.UserID)
 				if valRes == nil || !valRes.IsValid || valRes.Status == ytdlp.CookieStatusExpired {
