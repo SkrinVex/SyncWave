@@ -15,6 +15,7 @@ type Track struct {
 	ID           string      `json:"id"`
 	YouTubeID    string      `json:"youtube_id"`
 	PlaylistID   *string     `json:"playlist_id,omitempty"`
+	UserID       string      `json:"user_id,omitempty"`
 	Title        string      `json:"title"`
 	Artist       string      `json:"artist"`
 	Album        string      `json:"album"`
@@ -32,6 +33,7 @@ type Track struct {
 }
 
 type TrackFilter struct {
+	UserID     string
 	Query      string // search title, artist, album
 	PlaylistID string
 	Status     TrackStatus
@@ -59,14 +61,14 @@ type TrackStats struct {
 
 type TrackRepository interface {
 	Create(track *Track) error
-	GetByID(id string) (*Track, error)
-	GetByYouTubeID(youtubeID string) (*Track, error)
-	GetExistingYouTubeIDs(youtubeIDs []string) (map[string]bool, error)
+	GetByID(id string, userID string) (*Track, error)
+	GetByYouTubeID(youtubeID string, userID string) (*Track, error)
+	GetExistingYouTubeIDs(youtubeIDs []string, userID string) (map[string]bool, error)
 	List(filter TrackFilter) (*TrackListResult, error)
 	Update(track *Track) error
-	Delete(id string) error
-	BatchDelete(ids []string) error
+	Delete(id string, userID string) error
+	BatchDelete(ids []string, userID string) error
 	CleanBrokenTracks() error
-	GetStats() (*TrackStats, error)
-	GetAllReady() ([]Track, error)
+	GetStats(userID string) (*TrackStats, error)
+	GetAllReady(userID string) ([]Track, error)
 }

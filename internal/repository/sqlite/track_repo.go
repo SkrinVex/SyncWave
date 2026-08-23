@@ -25,48 +25,63 @@ func (r *TrackRepository) Create(t *domain.Track) error {
 
 	query := `
 	INSERT INTO tracks (
-		id, youtube_id, playlist_id, title, artist, album, duration,
+		id, youtube_id, playlist_id, user_id, title, artist, album, duration,
 		file_path, cover_path, file_size, format, bitrate, status,
 		error_message, downloaded_at, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`
 
 	_, err := r.db.Exec(
 		query,
-		t.ID, t.YouTubeID, t.PlaylistID, t.Title, t.Artist, t.Album, t.Duration,
+		t.ID, t.YouTubeID, t.PlaylistID, t.UserID, t.Title, t.Artist, t.Album, t.Duration,
 		t.FilePath, t.CoverPath, t.FileSize, t.Format, t.Bitrate, string(t.Status),
 		t.ErrorMessage, t.DownloadedAt, t.CreatedAt, t.UpdatedAt,
 	)
 	return err
 }
 
-func (r *TrackRepository) GetByID(id string) (*domain.Track, error) {
+func (r *TrackRepository) GetByID(id string, userID string) (*domain.Track, error) {
 	query := `
-	SELECT id, youtube_id, playlist_id, title, artist, album, duration,
+	SELECT id, youtube_id, playlist_id, user_id, title, artist, album, duration,
 	       file_path, cover_path, file_size, format, bitrate, status,
 	       error_message, downloaded_at, created_at, updated_at
-	FROM tracks WHERE id = ?;
-	`
-	return r.scanTrack(r.db.QueryRow(query, id))
+	FROM tracks WHERE id = ?`
+	var args []interface{}
+	args = append(args, id)
+
+	if userID != "" {
+		query += " AND user_id = ?"
+		args = append(args, userID)
+	}
+	query += ";"
+
+	return r.scanTrack(r.db.QueryRow(query, args...))
 }
 
-func (r *TrackRepository) GetByYouTubeID(youtubeID string) (*domain.Track, error) {
+func (r *TrackRepository) GetByYouTubeID(youtubeID string, userID string) (*domain.Track, error) {
 	query := `
-	SELECT id, youtube_id, playlist_id, title, artist, album, duration,
+	SELECT id, youtube_id, playlist_id, user_id, title, artist, album, duration,
 	       file_path, cover_path, file_size, format, bitrate, status,
 	       error_message, downloaded_at, created_at, updated_at
-	FROM tracks WHERE youtube_id = ?;
-	`
-	return r.scanTrack(r.db.QueryRow(query, youtubeID))
+	FROM tracks WHERE youtube_id = ?`
+	var args []interface{}
+	args = append(args, youtubeID)
+
+	if userID != "" {
+		query += " AND user_id = ?"
+		args = append(args, userID)
+	}
+	query += ";"
+
+	return r.scanTrack(r.db.QueryRow(query, args...))
 }
 
-func (r *TrackRepository) GetExistingYouTubeIDs(youtubeIDs []string) (map[string]bool, error) {
+func (r *TrackRepository) GetExistingYouTubeIDs(youtubeIDs []string, userID string) (map[string]bool, error) {
 	result := make(map[string]bool)
 	if len(youtubeIDs) == 0 {
 		return result, nil
 	}
 
-	// SQLite parameter limit: chunk in batches if very large
 	chunkSize := 400
 	for i := 0; i < len(youtubeIDs); i += chunkSize {
 		end := i + chunkSize
@@ -76,13 +91,19 @@ func (r *TrackRepository) GetExistingYouTubeIDs(youtubeIDs []string) (map[string
 		chunk := youtubeIDs[i:end]
 
 		placeholders := make([]string, len(chunk))
-		args := make([]interface{}, len(chunk))
+		args := make([]interface{}, 0, len(chunk)+1)
 		for idx, id := range chunk {
 			placeholders[idx] = "?"
-			args[idx] = id
+			args = append(args, id)
 		}
 
-		query := fmt.Sprintf("SELECT youtube_id FROM tracks WHERE youtube_id IN (%s)", strings.Join(placeholders, ","))
+		userFilter := ""
+		if userID != "" {
+			userFilter = " AND user_id = ?"
+			args = append(args, userID)
+		}
+
+		query := fmt.Sprintf("SELECT youtube_id FROM tracks WHERE youtube_id IN (%s)%s", strings.Join(placeholders, ","), userFilter)
 		rows, err := r.db.Query(query, args...)
 		if err != nil {
 			return nil, err
@@ -103,6 +124,11 @@ func (r *TrackRepository) GetExistingYouTubeIDs(youtubeIDs []string) (map[string
 func (r *TrackRepository) List(filter domain.TrackFilter) (*domain.TrackListResult, error) {
 	where := []string{"1=1"}
 	args := []interface{}{}
+
+	if filter.UserID != "" {
+		where = append(where, "user_id = ?")
+		args = append(args, filter.UserID)
+	}
 
 	if filter.Query != "" {
 		where = append(where, "(title LIKE ? OR artist LIKE ? OR album LIKE ?)")
@@ -159,7 +185,7 @@ func (r *TrackRepository) List(filter domain.TrackFilter) (*domain.TrackListResu
 	offset := (page - 1) * pageSize
 
 	query := fmt.Sprintf(`
-	SELECT id, youtube_id, playlist_id, title, artist, album, duration,
+	SELECT id, youtube_id, playlist_id, user_id, title, artist, album, duration,
 	       file_path, cover_path, file_size, format, bitrate, status,
 	       error_message, downloaded_at, created_at, updated_at
 	FROM tracks
@@ -181,9 +207,10 @@ func (r *TrackRepository) List(filter domain.TrackFilter) (*domain.TrackListResu
 		var statusStr string
 		var downloadedAt sql.NullTime
 		var playlistID sql.NullString
+		var userID sql.NullString
 
 		err := rows.Scan(
-			&t.ID, &t.YouTubeID, &playlistID, &t.Title, &t.Artist, &t.Album, &t.Duration,
+			&t.ID, &t.YouTubeID, &playlistID, &userID, &t.Title, &t.Artist, &t.Album, &t.Duration,
 			&t.FilePath, &t.CoverPath, &t.FileSize, &t.Format, &t.Bitrate, &statusStr,
 			&t.ErrorMessage, &downloadedAt, &t.CreatedAt, &t.UpdatedAt,
 		)
@@ -194,6 +221,9 @@ func (r *TrackRepository) List(filter domain.TrackFilter) (*domain.TrackListResu
 		t.Status = domain.TrackStatus(statusStr)
 		if playlistID.Valid {
 			t.PlaylistID = &playlistID.String
+		}
+		if userID.Valid {
+			t.UserID = userID.String
 		}
 		if downloadedAt.Valid {
 			t.DownloadedAt = &downloadedAt.Time
@@ -215,16 +245,22 @@ func (r *TrackRepository) List(filter domain.TrackFilter) (*domain.TrackListResu
 	}, nil
 }
 
-func (r *TrackRepository) GetAllReady() ([]domain.Track, error) {
+func (r *TrackRepository) GetAllReady(userID string) ([]domain.Track, error) {
 	query := `
-	SELECT id, youtube_id, playlist_id, title, artist, album, duration,
+	SELECT id, youtube_id, playlist_id, user_id, title, artist, album, duration,
 	       file_path, cover_path, file_size, format, bitrate, status,
 	       error_message, downloaded_at, created_at, updated_at
 	FROM tracks
-	WHERE status = 'ready'
-	ORDER BY created_at DESC;
-	`
-	rows, err := r.db.Query(query)
+	WHERE status = 'ready'`
+	var args []interface{}
+
+	if userID != "" {
+		query += " AND user_id = ?"
+		args = append(args, userID)
+	}
+	query += " ORDER BY created_at DESC;"
+
+	rows, err := r.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -236,9 +272,10 @@ func (r *TrackRepository) GetAllReady() ([]domain.Track, error) {
 		var statusStr string
 		var downloadedAt sql.NullTime
 		var playlistID sql.NullString
+		var uID sql.NullString
 
 		err := rows.Scan(
-			&t.ID, &t.YouTubeID, &playlistID, &t.Title, &t.Artist, &t.Album, &t.Duration,
+			&t.ID, &t.YouTubeID, &playlistID, &uID, &t.Title, &t.Artist, &t.Album, &t.Duration,
 			&t.FilePath, &t.CoverPath, &t.FileSize, &t.Format, &t.Bitrate, &statusStr,
 			&t.ErrorMessage, &downloadedAt, &t.CreatedAt, &t.UpdatedAt,
 		)
@@ -249,6 +286,9 @@ func (r *TrackRepository) GetAllReady() ([]domain.Track, error) {
 		t.Status = domain.TrackStatus(statusStr)
 		if playlistID.Valid {
 			t.PlaylistID = &playlistID.String
+		}
+		if uID.Valid {
+			t.UserID = uID.String
 		}
 		if downloadedAt.Valid {
 			t.DownloadedAt = &downloadedAt.Time
@@ -262,14 +302,14 @@ func (r *TrackRepository) Update(t *domain.Track) error {
 	t.UpdatedAt = time.Now().UTC()
 	query := `
 	UPDATE tracks SET
-		playlist_id = ?, title = ?, artist = ?, album = ?, duration = ?,
+		playlist_id = ?, user_id = ?, title = ?, artist = ?, album = ?, duration = ?,
 		file_path = ?, cover_path = ?, file_size = ?, format = ?, bitrate = ?,
 		status = ?, error_message = ?, downloaded_at = ?, updated_at = ?
 	WHERE id = ?;
 	`
 	_, err := r.db.Exec(
 		query,
-		t.PlaylistID, t.Title, t.Artist, t.Album, t.Duration,
+		t.PlaylistID, t.UserID, t.Title, t.Artist, t.Album, t.Duration,
 		t.FilePath, t.CoverPath, t.FileSize, t.Format, t.Bitrate,
 		string(t.Status), t.ErrorMessage, t.DownloadedAt, t.UpdatedAt,
 		t.ID,
@@ -277,9 +317,18 @@ func (r *TrackRepository) Update(t *domain.Track) error {
 	return err
 }
 
-func (r *TrackRepository) Delete(id string) error {
-	query := `DELETE FROM tracks WHERE id = ?;`
-	res, err := r.db.Exec(query, id)
+func (r *TrackRepository) Delete(id string, userID string) error {
+	query := `DELETE FROM tracks WHERE id = ?`
+	var args []interface{}
+	args = append(args, id)
+
+	if userID != "" {
+		query += " AND user_id = ?"
+		args = append(args, userID)
+	}
+	query += ";"
+
+	res, err := r.db.Exec(query, args...)
 	if err != nil {
 		return err
 	}
@@ -293,17 +342,24 @@ func (r *TrackRepository) Delete(id string) error {
 	return nil
 }
 
-func (r *TrackRepository) BatchDelete(ids []string) error {
+func (r *TrackRepository) BatchDelete(ids []string, userID string) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
+	args := make([]interface{}, 0, len(ids)+1)
 	for i, id := range ids {
 		placeholders[i] = "?"
-		args[i] = id
+		args = append(args, id)
 	}
-	query := fmt.Sprintf("DELETE FROM tracks WHERE id IN (%s);", strings.Join(placeholders, ","))
+
+	userFilter := ""
+	if userID != "" {
+		userFilter = " AND user_id = ?"
+		args = append(args, userID)
+	}
+
+	query := fmt.Sprintf("DELETE FROM tracks WHERE id IN (%s)%s;", strings.Join(placeholders, ","), userFilter)
 	_, err := r.db.Exec(query, args...)
 	return err
 }
@@ -314,7 +370,7 @@ func (r *TrackRepository) CleanBrokenTracks() error {
 	return err
 }
 
-func (r *TrackRepository) GetStats() (*domain.TrackStats, error) {
+func (r *TrackRepository) GetStats(userID string) (*domain.TrackStats, error) {
 	stats := &domain.TrackStats{}
 
 	query := `
@@ -324,10 +380,16 @@ func (r *TrackRepository) GetStats() (*domain.TrackStats, error) {
 		COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(file_size), 0),
 		COALESCE(SUM(duration), 0)
-	FROM tracks;
-	`
+	FROM tracks`
 
-	err := r.db.QueryRow(query).Scan(
+	var args []interface{}
+	if userID != "" {
+		query += " WHERE user_id = ?"
+		args = append(args, userID)
+	}
+	query += ";"
+
+	err := r.db.QueryRow(query, args...).Scan(
 		&stats.TotalTracks,
 		&stats.ReadyTracks,
 		&stats.FailedTracks,
@@ -346,9 +408,10 @@ func (r *TrackRepository) scanTrack(row *sql.Row) (*domain.Track, error) {
 	var statusStr string
 	var downloadedAt sql.NullTime
 	var playlistID sql.NullString
+	var userID sql.NullString
 
 	err := row.Scan(
-		&t.ID, &t.YouTubeID, &playlistID, &t.Title, &t.Artist, &t.Album, &t.Duration,
+		&t.ID, &t.YouTubeID, &playlistID, &userID, &t.Title, &t.Artist, &t.Album, &t.Duration,
 		&t.FilePath, &t.CoverPath, &t.FileSize, &t.Format, &t.Bitrate, &statusStr,
 		&t.ErrorMessage, &downloadedAt, &t.CreatedAt, &t.UpdatedAt,
 	)
@@ -362,6 +425,9 @@ func (r *TrackRepository) scanTrack(row *sql.Row) (*domain.Track, error) {
 	t.Status = domain.TrackStatus(statusStr)
 	if playlistID.Valid {
 		t.PlaylistID = &playlistID.String
+	}
+	if userID.Valid {
+		t.UserID = userID.String
 	}
 	if downloadedAt.Valid {
 		t.DownloadedAt = &downloadedAt.Time

@@ -22,16 +22,16 @@ func (u *TrackUsecase) List(filter domain.TrackFilter) (*domain.TrackListResult,
 	return u.trackRepo.List(filter)
 }
 
-func (u *TrackUsecase) GetByID(id string) (*domain.Track, error) {
-	return u.trackRepo.GetByID(id)
+func (u *TrackUsecase) GetByID(id string, userID string) (*domain.Track, error) {
+	return u.trackRepo.GetByID(id, userID)
 }
 
-func (u *TrackUsecase) GetAllReady() ([]domain.Track, error) {
-	return u.trackRepo.GetAllReady()
+func (u *TrackUsecase) GetAllReady(userID string) ([]domain.Track, error) {
+	return u.trackRepo.GetAllReady(userID)
 }
 
-func (u *TrackUsecase) Delete(id string) error {
-	track, err := u.trackRepo.GetByID(id)
+func (u *TrackUsecase) Delete(id string, userID string) error {
+	track, err := u.trackRepo.GetByID(id, userID)
 	if err != nil {
 		return err
 	}
@@ -39,11 +39,12 @@ func (u *TrackUsecase) Delete(id string) error {
 	// Add to blacklist before deletion
 	_ = u.blacklistRepo.Add(&domain.BlacklistItem{
 		YouTubeID: track.YouTubeID,
+		UserID:    userID,
 		Title:     track.Title,
 		Artist:    track.Artist,
 	})
 
-	// Remove physical files
+	// Remove physical files if no other user is referencing them
 	if track.FilePath != "" {
 		_ = os.Remove(track.FilePath)
 	}
@@ -51,15 +52,16 @@ func (u *TrackUsecase) Delete(id string) error {
 		_ = os.Remove(track.CoverPath)
 	}
 
-	return u.trackRepo.Delete(id)
+	return u.trackRepo.Delete(id, userID)
 }
 
-func (u *TrackUsecase) BatchDelete(ids []string) error {
+func (u *TrackUsecase) BatchDelete(ids []string, userID string) error {
 	for _, id := range ids {
-		if track, err := u.trackRepo.GetByID(id); err == nil && track != nil {
+		if track, err := u.trackRepo.GetByID(id, userID); err == nil && track != nil {
 			// Add to blacklist before deletion
 			_ = u.blacklistRepo.Add(&domain.BlacklistItem{
 				YouTubeID: track.YouTubeID,
+				UserID:    userID,
 				Title:     track.Title,
 				Artist:    track.Artist,
 			})
@@ -72,13 +74,13 @@ func (u *TrackUsecase) BatchDelete(ids []string) error {
 			}
 		}
 	}
-	return u.trackRepo.BatchDelete(ids)
+	return u.trackRepo.BatchDelete(ids, userID)
 }
 
 func (u *TrackUsecase) CleanBrokenTracks() error {
 	return u.trackRepo.CleanBrokenTracks()
 }
 
-func (u *TrackUsecase) GetStats() (*domain.TrackStats, error) {
-	return u.trackRepo.GetStats()
+func (u *TrackUsecase) GetStats(userID string) (*domain.TrackStats, error) {
+	return u.trackRepo.GetStats(userID)
 }

@@ -87,6 +87,22 @@ type FlatPlaylistOutput struct {
 
 type ProgressCallback func(percent float64, speed string, eta string, status string)
 
+func NormalizePlaylistURL(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "LM" || input == "liked" {
+		return "LM"
+	}
+	if strings.Contains(input, "list=") {
+		u, err := url.Parse(input)
+		if err == nil {
+			if listID := u.Query().Get("list"); listID != "" {
+				return listID
+			}
+		}
+	}
+	return input
+}
+
 func NewClient(ytdlpPath, ffmpegPath, cookiesPath, musicDir, coversDir string) *Client {
 	return &Client{
 		ytdlpPath:   ytdlpPath,
@@ -136,6 +152,46 @@ func (c *Client) GetFFmpegVersion() (string, error) {
 	return "unknown", nil
 }
 
+func (c *Client) GetUserCookiesPath(userID string) string {
+	if userID != "" {
+		return filepath.Join(filepath.Dir(c.cookiesPath), "cookies", fmt.Sprintf("cookies_%s.txt", userID))
+	}
+	return c.cookiesPath
+}
+
+func (c *Client) HasUserCookies(userID string) bool {
+	if userID != "" {
+		path := c.GetUserCookiesPath(userID)
+		if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+			return true
+		}
+		return false
+	}
+	return c.HasCookies()
+}
+
+func (c *Client) GetUserCookiesModTime(userID string) (string, bool) {
+	if userID != "" {
+		path := c.GetUserCookiesPath(userID)
+		if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+			return info.ModTime().Format(time.RFC3339), true
+		}
+		return "", false
+	}
+	return c.GetCookiesModTime()
+}
+
+func (c *Client) SaveUserCookies(userID string, content []byte) error {
+	path := c.GetUserCookiesPath(userID)
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	return os.WriteFile(path, content, 0600)
+}
+
+func (c *Client) DeleteUserCookies(userID string) error {
+	path := c.GetUserCookiesPath(userID)
+	return os.Remove(path)
+}
+
 func (c *Client) HasCookies() bool {
 	info, err := os.Stat(c.cookiesPath)
 	return err == nil && info.Size() > 0
@@ -154,7 +210,7 @@ func (c *Client) SaveCookies(content []byte) error {
 	return os.WriteFile(c.cookiesPath, content, 0600)
 }
 
-func (c *Client) buildBaseArgs() []string {
+func (c *Client) buildBaseArgsForUser(userID string) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -164,8 +220,8 @@ func (c *Client) buildBaseArgs() []string {
 		args = append(args, "--ffmpeg-location", c.ffmpegPath)
 	}
 
-	if c.HasCookies() {
-		args = append(args, "--cookies", c.cookiesPath)
+	if c.HasUserCookies(userID) {
+		args = append(args, "--cookies", c.GetUserCookiesPath(userID))
 		args = append(args, "--extractor-args", "youtube:player_skip=configs")
 	}
 
@@ -176,6 +232,7 @@ func (c *Client) buildBaseArgs() []string {
 	args = append(args,
 		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
 		"--no-check-certificates",
+		"--no-warnings",
 		"--js-runtimes", "node",
 		"--remote-components", "ejs:github",
 	)
@@ -183,81 +240,29 @@ func (c *Client) buildBaseArgs() []string {
 	return args
 }
 
-// NormalizePlaylistURL converts "LM", playlist IDs, or full URLs into standard yt-dlp target URLs
-func NormalizePlaylistURL(rawInput string) string {
-	raw := strings.TrimSpace(rawInput)
-	if raw == "LM" || raw == "liked" || raw == "likes" {
-		return "https://music.youtube.com/playlist?list=LM"
-	}
-	if raw == "LL" {
-		return "https://www.youtube.com/playlist?list=LL"
-	}
-
-	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
-		if strings.Contains(raw, "list=") {
-			parts := strings.Split(raw, "list=")
-			if len(parts) > 1 {
-				playlistID := parts[1]
-				if idx := strings.Index(playlistID, "&"); idx != -1 {
-					playlistID = playlistID[:idx]
-				}
-				if idx := strings.Index(playlistID, "#"); idx != -1 {
-					playlistID = playlistID[:idx]
-				}
-				if strings.Contains(raw, "music.youtube.com") {
-					return "https://music.youtube.com/playlist?list=" + playlistID
-				}
-				return "https://www.youtube.com/playlist?list=" + playlistID
-			}
-		}
-		return raw
-	}
-
-	if strings.HasPrefix(raw, "PL") || strings.HasPrefix(raw, "RD") || strings.HasPrefix(raw, "OL") || strings.HasPrefix(raw, "VL") || strings.HasPrefix(raw, "LRSR") {
-		return "https://music.youtube.com/playlist?list=" + raw
-	}
-
-	return "https://music.youtube.com/playlist?list=" + raw
+func (c *Client) FetchFlatPlaylist(ctx context.Context, urlOrID string) (*FlatPlaylistOutput, error) {
+	return c.FetchFlatPlaylistForUser(ctx, urlOrID, "")
 }
 
-// ExtractPlaylistDelta fetches fast JSON metadata (--flat-playlist) without downloading media streams
-func (c *Client) ExtractPlaylistDelta(ctx context.Context, playlistInput string) (*FlatPlaylistOutput, error) {
-	url := NormalizePlaylistURL(playlistInput)
-
-	out, err := c.runFlatPlaylist(ctx, url)
-	if err == nil && len(out.Entries) > 0 {
-		return out, nil
-	}
-
-	// Fallback 1: If URL was music.youtube.com, try www.youtube.com
-	if strings.Contains(url, "music.youtube.com/playlist?list=") {
-		ytUrl := strings.Replace(url, "music.youtube.com", "www.youtube.com", 1)
-		if ytOut, ytErr := c.runFlatPlaylist(ctx, ytUrl); ytErr == nil && len(ytOut.Entries) > 0 {
-			return ytOut, nil
-		}
-	}
-
-	// Fallback 2: If playlist was LM (Liked Music), also try LL (Liked Videos)
-	if strings.Contains(url, "list=LM") {
-		llUrl := "https://www.youtube.com/playlist?list=LL"
-		if llOut, llErr := c.runFlatPlaylist(ctx, llUrl); llErr == nil && len(llOut.Entries) > 0 {
-			return llOut, nil
-		}
-	}
-
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
+func (c *Client) ExtractPlaylistDelta(ctx context.Context, urlOrID string) (*FlatPlaylistOutput, error) {
+	return c.FetchFlatPlaylistForUser(ctx, urlOrID, "")
 }
 
-func (c *Client) runFlatPlaylist(ctx context.Context, targetURL string) (*FlatPlaylistOutput, error) {
-	args := append(c.buildBaseArgs(),
+func (c *Client) ExtractPlaylistDeltaForUser(ctx context.Context, urlOrID string, userID string) (*FlatPlaylistOutput, error) {
+	return c.FetchFlatPlaylistForUser(ctx, urlOrID, userID)
+}
+
+func (c *Client) FetchFlatPlaylistForUser(ctx context.Context, urlOrID string, userID string) (*FlatPlaylistOutput, error) {
+	targetURL := urlOrID
+	if !strings.HasPrefix(urlOrID, "http://") && !strings.HasPrefix(urlOrID, "https://") {
+		targetURL = fmt.Sprintf("https://music.youtube.com/playlist?list=%s", urlOrID)
+	}
+
+	args := c.buildBaseArgsForUser(userID)
+	args = append(args,
 		"--flat-playlist",
-		"-J",
-		"--yes-playlist",
-		"--ignore-errors",
-		"--no-warnings",
+		"--dump-single-json",
+		"--no-playlist-reverse",
 		targetURL,
 	)
 
@@ -267,69 +272,35 @@ func (c *Client) runFlatPlaylist(ctx context.Context, targetURL string) (*FlatPl
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to extract playlist: %v, stderr: %s", err, strings.TrimSpace(stderr.String()))
-	}
-
-	var output FlatPlaylistOutput
-	if err := json.Unmarshal(stdout.Bytes(), &output); err == nil && len(output.Entries) > 0 {
-		return &output, nil
-	}
-
-	// Dynamic fallback map unmarshaling for custom formats
-	var rawMap map[string]interface{}
-	if err := json.Unmarshal(stdout.Bytes(), &rawMap); err == nil {
-		var entries []PlaylistEntry
-		if rawEntries, ok := rawMap["entries"].([]interface{}); ok {
-			for _, item := range rawEntries {
-				if itemMap, ok := item.(map[string]interface{}); ok {
-					var e PlaylistEntry
-					if id, ok := itemMap["id"].(string); ok {
-						e.ID = id
-					}
-					if title, ok := itemMap["title"].(string); ok {
-						e.Title = title
-					}
-					if uploader, ok := itemMap["uploader"].(string); ok {
-						e.Uploader = uploader
-					}
-					if artist, ok := itemMap["artist"].(string); ok {
-						e.Artist = artist
-					}
-					if u, ok := itemMap["url"].(string); ok {
-						e.URL = u
-					}
-					if dur, ok := itemMap["duration"]; ok {
-						e.Duration = dur
-					}
-					if e.GetID() != "" {
-						entries = append(entries, e)
-					}
-				}
-			}
+		stdErrStr := stderr.String()
+		if strings.Contains(stdErrStr, "429") {
+			return nil, fmt.Errorf("YouTube rate limit (HTTP 429). Please configure residential proxy in Settings: %s", stdErrStr)
 		}
-		title, _ := rawMap["title"].(string)
-		id, _ := rawMap["id"].(string)
-		return &FlatPlaylistOutput{
-			ID:      id,
-			Title:   title,
-			Entries: entries,
-		}, nil
+		if strings.Contains(stdErrStr, "Private video") || strings.Contains(stdErrStr, "Sign in") {
+			return nil, fmt.Errorf("Playlist requires authentication. Please upload cookies.txt in Settings: %s", stdErrStr)
+		}
+		return nil, fmt.Errorf("yt-dlp flat playlist error: %w (stderr: %s)", err, stdErrStr)
 	}
 
-	return nil, fmt.Errorf("failed to parse playlist json")
+	var flatOutput FlatPlaylistOutput
+	if err := json.Unmarshal(stdout.Bytes(), &flatOutput); err != nil {
+		return nil, fmt.Errorf("failed to parse playlist json: %w", err)
+	}
+
+	return &flatOutput, nil
 }
 
 type DownloadResult struct {
-	YouTubeID string
-	Title     string
-	Artist    string
-	Album     string
-	Duration  int
-	FilePath  string
-	CoverPath string
-	FileSize  int64
-	Format    string
-	Bitrate   int
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Artist    string `json:"artist"`
+	Album     string `json:"album"`
+	Duration  int    `json:"duration"`
+	FilePath  string `json:"file_path"`
+	CoverPath string `json:"cover_path"`
+	FileSize  int64  `json:"file_size"`
+	Format    string `json:"format"`
+	Bitrate   int    `json:"bitrate"`
 }
 
 var (
@@ -337,7 +308,7 @@ var (
 	progressSimpleRegex = regexp.MustCompile(`\[download\]\s+([\d\.]+)%`)
 )
 
-func (c *Client) buildDownloadArgs(targetURL, outTemplate, format string, withCookies bool) []string {
+func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string, userID string, withCookies bool) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -347,8 +318,8 @@ func (c *Client) buildDownloadArgs(targetURL, outTemplate, format string, withCo
 		args = append(args, "--ffmpeg-location", c.ffmpegPath)
 	}
 
-	if withCookies && c.HasCookies() {
-		args = append(args, "--cookies", c.cookiesPath)
+	if withCookies && c.HasUserCookies(userID) {
+		args = append(args, "--cookies", c.GetUserCookiesPath(userID))
 	}
 
 	if c.proxyURL != "" {
@@ -385,8 +356,11 @@ func (c *Client) buildDownloadArgs(targetURL, outTemplate, format string, withCo
 	return args
 }
 
-// DownloadTrack downloads a single track by YouTube ID or URL, extracts audio, tags metadata and creates cover image
 func (c *Client) DownloadTrack(ctx context.Context, youtubeID string, onProgress ProgressCallback) (*DownloadResult, error) {
+	return c.DownloadTrackForUser(ctx, youtubeID, "", onProgress)
+}
+
+func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID string, userID string, onProgress ProgressCallback) (*DownloadResult, error) {
 	c.mu.RLock()
 	format := c.audioFormat
 	if format == "" {
@@ -401,172 +375,176 @@ func (c *Client) DownloadTrack(ctx context.Context, youtubeID string, onProgress
 	trackCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
-	// First attempt: Android player client without cookies (fastest and most reliable)
-	res, err := c.executeDownload(trackCtx, youtubeID, targetURL, outTemplate, format, false, onProgress)
+	// First attempt: Android player client without cookies
+	res, err := c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, false, onProgress)
 	if err == nil {
 		return res, nil
 	}
 
-	// Second attempt (if cookies exist): Retry with cookies enabled if first attempt failed
-	if c.HasCookies() && ctx.Err() == nil {
-		return c.executeDownload(trackCtx, youtubeID, targetURL, outTemplate, format, true, onProgress)
+	// Second attempt (if user cookies exist): Retry with cookies enabled
+	if c.HasUserCookies(userID) && ctx.Err() == nil {
+		return c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, true, onProgress)
 	}
 
 	return nil, err
 }
 
-func (c *Client) executeDownload(ctx context.Context, youtubeID, targetURL, outTemplate, format string, withCookies bool, onProgress ProgressCallback) (*DownloadResult, error) {
-	args := c.buildDownloadArgs(targetURL, outTemplate, format, withCookies)
+func (c *Client) executeDownloadForUser(ctx context.Context, youtubeID, targetURL, outTemplate, format string, userID string, withCookies bool, onProgress ProgressCallback) (*DownloadResult, error) {
+	args := c.buildDownloadArgsForUser(targetURL, outTemplate, format, userID, withCookies)
 
 	cmd := exec.CommandContext(ctx, c.ytdlpPath, args...)
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start yt-dlp download: %w", err)
+		return nil, fmt.Errorf("failed to start yt-dlp: %w", err)
 	}
 
-	scanner := bufio.NewScanner(stdoutPipe)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	var metadataLine string
+	var mu sync.Mutex
 
-	title := youtubeID
-	artist := "Unknown Artist"
-	album := ""
-	duration := 0
+	go func() {
+		scanner := bufio.NewScanner(stdoutPipe)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "METADATA:") {
+				mu.Lock()
+				metadataLine = line
+				mu.Unlock()
+			}
 
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Parse custom lightweight metadata
-		if strings.HasPrefix(line, "METADATA:") {
-			raw := strings.TrimPrefix(line, "METADATA:")
-			parts := strings.Split(raw, "|||")
-			if len(parts) >= 2 && parts[1] != "NA" && parts[1] != "" {
-				title = parts[1]
-			}
-			if len(parts) >= 3 && parts[2] != "NA" && parts[2] != "" {
-				artist = parts[2]
-			}
-			if len(parts) >= 4 && parts[3] != "NA" && parts[3] != "" {
-				album = parts[3]
-			}
-			if len(parts) >= 5 && parts[4] != "NA" && parts[4] != "" {
-				if d, err := strconv.Atoi(parts[4]); err == nil {
-					duration = d
+			if onProgress != nil {
+				if matches := progressRegex.FindStringSubmatch(line); len(matches) >= 5 {
+					pct, _ := strconv.ParseFloat(matches[1], 64)
+					onProgress(pct, matches[3], matches[4], "downloading")
+				} else if matches := progressSimpleRegex.FindStringSubmatch(line); len(matches) >= 2 {
+					pct, _ := strconv.ParseFloat(matches[1], 64)
+					onProgress(pct, "", "", "downloading")
 				}
 			}
-			if artist == "Unknown Artist" || artist == "" {
-				if len(parts) >= 6 && parts[5] != "NA" && parts[5] != "" {
-					artist = parts[5]
-				} else if len(parts) >= 7 && parts[6] != "NA" && parts[6] != "" {
-					artist = parts[6]
-				}
-			}
-			continue
 		}
+	}()
 
-		// Parse download progress
-		if onProgress != nil {
-			if matches := progressRegex.FindStringSubmatch(line); len(matches) >= 5 {
-				percent, _ := strconv.ParseFloat(matches[1], 64)
-				speed := matches[3]
-				eta := matches[4]
-				onProgress(percent, speed, eta, "downloading")
-			} else if matches := progressSimpleRegex.FindStringSubmatch(line); len(matches) >= 2 {
-				percent, _ := strconv.ParseFloat(matches[1], 64)
-				onProgress(percent, "", "", "downloading")
-			}
-		}
+	var stderrBuf bytes.Buffer
+	go func() {
+		_, _ = stderrBuf.ReadFrom(stderrPipe)
+	}()
+
+	cmdErr := cmd.Wait()
+	if cmdErr != nil {
+		return nil, fmt.Errorf("download failed: %w (stderr: %s)", cmdErr, stderrBuf.String())
 	}
 
-	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("yt-dlp failed: %v, stderr: %s", err, strings.TrimSpace(stderr.String()))
-	}
-
-	// Locate downloaded audio file
 	expectedAudioPath := filepath.Join(c.musicDir, fmt.Sprintf("%s.%s", youtubeID, format))
-	fileInfo, err := os.Stat(expectedAudioPath)
+	fi, err := os.Stat(expectedAudioPath)
 	if err != nil {
-		pattern := filepath.Join(c.musicDir, fmt.Sprintf("%s.*", youtubeID))
-		matches, _ := filepath.Glob(pattern)
-		found := false
-		for _, m := range matches {
-			ext := strings.ToLower(filepath.Ext(m))
-			if ext == ".opus" || ext == ".m4a" || ext == ".mp3" || ext == ".flac" || ext == ".webm" || ext == ".ogg" {
-				expectedAudioPath = m
-				fileInfo, _ = os.Stat(m)
-				format = strings.TrimPrefix(ext, ".")
-				found = true
-				break
+		matches, globErr := filepath.Glob(filepath.Join(c.musicDir, fmt.Sprintf("%s.*", youtubeID)))
+		if globErr == nil && len(matches) > 0 {
+			for _, m := range matches {
+				if !strings.HasSuffix(m, ".jpg") && !strings.HasSuffix(m, ".webp") && !strings.HasSuffix(m, ".png") {
+					expectedAudioPath = m
+					fi, _ = os.Stat(expectedAudioPath)
+					break
+				}
 			}
 		}
-		if !found {
-			return nil, fmt.Errorf("could not locate downloaded audio file for %s", youtubeID)
-		}
 	}
 
-	// Handle thumbnail / cover art
-	expectedCoverPath := filepath.Join(c.coversDir, fmt.Sprintf("%s.jpg", youtubeID))
-	tempThumbnailPath := filepath.Join(c.musicDir, fmt.Sprintf("%s.jpg", youtubeID))
-	if _, err := os.Stat(tempThumbnailPath); err == nil {
-		_ = os.Rename(tempThumbnailPath, expectedCoverPath)
+	var fileSize int64
+	if fi != nil {
+		fileSize = fi.Size()
+	}
+
+	expectedCoverPath := filepath.Join(c.musicDir, fmt.Sprintf("%s.jpg", youtubeID))
+	finalCoverPath := filepath.Join(c.coversDir, fmt.Sprintf("%s.jpg", youtubeID))
+	if _, err := os.Stat(expectedCoverPath); err == nil {
+		_ = os.MkdirAll(c.coversDir, 0755)
+		_ = os.Rename(expectedCoverPath, finalCoverPath)
 	} else {
-		webpPattern := filepath.Join(c.musicDir, fmt.Sprintf("%s.webp", youtubeID))
-		if _, err := os.Stat(webpPattern); err == nil {
-			_ = os.Rename(webpPattern, expectedCoverPath)
-		}
+		finalCoverPath = ""
 	}
 
-	fileSize := int64(0)
-	if fileInfo != nil {
-		fileSize = fileInfo.Size()
-	}
-
-	return &DownloadResult{
-		YouTubeID: youtubeID,
-		Title:     title,
-		Artist:    artist,
-		Album:     album,
-		Duration:  duration,
+	res := &DownloadResult{
+		ID:        youtubeID,
+		Title:     "Unknown Title",
+		Artist:    "Unknown Artist",
+		Album:     "",
+		Duration:  0,
 		FilePath:  expectedAudioPath,
-		CoverPath: expectedCoverPath,
+		CoverPath: finalCoverPath,
 		FileSize:  fileSize,
 		Format:    format,
 		Bitrate:   160,
-	}, nil
+	}
+
+	mu.Lock()
+	meta := metadataLine
+	mu.Unlock()
+
+	if meta != "" {
+		parts := strings.Split(strings.TrimPrefix(meta, "METADATA:"), "|||")
+		if len(parts) >= 1 && parts[0] != "" {
+			res.ID = parts[0]
+		}
+		if len(parts) >= 2 && parts[1] != "" {
+			res.Title = parts[1]
+		}
+		if len(parts) >= 3 && parts[2] != "" {
+			res.Artist = parts[2]
+		} else if len(parts) >= 6 && parts[5] != "" {
+			res.Artist = parts[5]
+		} else if len(parts) >= 7 && parts[6] != "" {
+			res.Artist = parts[6]
+		}
+		if len(parts) >= 4 && parts[3] != "" {
+			res.Album = parts[3]
+		}
+		if len(parts) >= 5 && parts[4] != "" {
+			sec, _ := strconv.Atoi(parts[4])
+			res.Duration = sec
+		}
+	}
+
+	return res, nil
 }
 
-func (c *Client) TestProxyConnection(ctx context.Context, proxyURL string) error {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-	if proxyURL != "" {
-		pURL, err := url.Parse(proxyURL)
-		if err != nil {
-			return fmt.Errorf("invalid proxy url: %w", err)
-		}
-		client.Transport = &http.Transport{
-			Proxy: http.ProxyURL(pURL),
-		}
+func (c *Client) TestProxyConnection(ctx context.Context, proxyURLStr string) error {
+	proxyURL, err := url.Parse(proxyURLStr)
+	if err != nil {
+		return fmt.Errorf("invalid proxy URL format: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.youtube.com/generate_204", nil)
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   8 * time.Second,
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.youtube.com/generate_204", nil)
 	if err != nil {
 		return err
 	}
 
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("proxy connection failed: %w", err)
+		return fmt.Errorf("proxy test failed (cannot reach YouTube): %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("proxy responded with error status: %s", resp.Status)
 	}
+
 	return nil
 }

@@ -103,7 +103,29 @@
     </div>
 
     <!-- Bottom Actions & User Profile -->
-    <div class="p-3 border-t border-studio-borderSubtle space-y-3">
+    <div class="p-3 border-t border-studio-borderSubtle space-y-2.5">
+      <!-- Storage & Quota Widget (Always visible on mobile drawer and desktop sidebar) -->
+      <div class="p-2.5 rounded-xl bg-studio-elevated border border-studio-border text-xs font-mono space-y-1.5">
+        <div class="flex items-center justify-between text-zinc-300 text-[11px]">
+          <div class="flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-indigo-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+            </svg>
+            <span class="font-semibold">{{ formatBytes(tracksStore.stats.total_storage_size) }}</span>
+            <span v-if="userQuota > 0" class="text-zinc-500">/ {{ formatBytes(userQuota) }}</span>
+            <span v-else-if="authStore.user?.is_admin" class="text-zinc-500">/ ∞</span>
+          </div>
+          <span class="text-zinc-400">{{ tracksStore.stats.total_tracks }} {{ i18n.t('nav.tracks') }}</span>
+        </div>
+
+        <div v-if="userQuota > 0" class="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+          <div
+            class="h-full bg-indigo-500 rounded-full transition-all duration-300"
+            :style="{ width: quotaPercent + '%' }"
+          ></div>
+        </div>
+      </div>
+
       <!-- Install PWA Button -->
       <button
         v-if="!isStandalone"
@@ -141,7 +163,10 @@
           <div class="w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-300 font-mono text-[10px]">
             {{ authStore.user?.username?.charAt(0).toUpperCase() || 'U' }}
           </div>
-          <span class="font-medium text-zinc-300 truncate max-w-[100px]">{{ authStore.user?.username }}</span>
+          <div class="flex flex-col min-w-0">
+            <span class="font-medium text-zinc-200 truncate max-w-[100px] leading-tight">{{ authStore.user?.username }}</span>
+            <span class="text-[9px] text-zinc-500 font-mono leading-tight">{{ authStore.user?.is_admin ? 'Admin' : 'User' }}</span>
+          </div>
         </div>
         <button
           @click="$emit('request-sign-out')"
@@ -158,7 +183,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useTracksStore } from '../stores/tracks'
 import { usePlaylistsStore } from '../stores/playlists'
@@ -181,6 +206,23 @@ const playlistsStore = usePlaylistsStore()
 const syncStore = useSyncStore()
 const toast = useToastStore()
 const i18n = useI18nStore()
+
+const userQuota = computed(() => {
+  return authStore.user?.storage_quota_bytes || 0
+})
+
+const quotaPercent = computed(() => {
+  if (!userQuota.value || userQuota.value <= 0) return 0
+  return Math.min(100, Math.round((tracksStore.stats.total_storage_size / userQuota.value) * 100))
+})
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
 
 const deferredPrompt = ref(null)
 const isStandalone = ref(false)

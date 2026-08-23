@@ -249,6 +249,19 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
+  function stop() {
+    audio.pause()
+    audio.src = ''
+    currentTrack.value = null
+    isPlaying.value = false
+    currentTime.value = 0
+    duration.value = 0
+    buffered.value = 0
+    queue.value = []
+    queueIndex.value = -1
+    clearMediaSession()
+  }
+
   return {
     currentTrack,
     isPlaying,
@@ -267,6 +280,7 @@ export const usePlayerStore = defineStore('player', () => {
     togglePlay,
     play,
     pause,
+    stop,
     seek,
     setVolume,
     toggleMute,

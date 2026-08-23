@@ -180,7 +180,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 	q.mu.Unlock()
 	q.eventHub.BroadcastProgress(q.GetCurrentProgress())
 
-	flatOutput, err := q.ytdlpClient.ExtractPlaylistDelta(taskCtx, playlist.YouTubeID)
+	flatOutput, err := q.ytdlpClient.ExtractPlaylistDeltaForUser(taskCtx, playlist.YouTubeID, playlist.UserID)
 	if err != nil {
 		if taskCtx.Err() != nil {
 			playlist.Status = domain.PlaylistStatusIdle
@@ -212,8 +212,8 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 
 	q.log(&playlist.ID, nil, domain.LogLevelInfo, fmt.Sprintf("Found %d tracks in remote playlist", len(extractedIDs)))
 
-	// Step 2: Batch delta check with database
-	existingMap, err := q.trackRepo.GetExistingYouTubeIDs(extractedIDs)
+	// Step 2: Batch delta check with database (User-scoped)
+	existingMap, err := q.trackRepo.GetExistingYouTubeIDs(extractedIDs, playlist.UserID)
 	if err != nil {
 		q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Failed to check existing tracks: %v", err))
 		existingMap = make(map[string]bool)
@@ -225,8 +225,8 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 
 	for _, id := range extractedIDs {
 		if !existingMap[id] {
-			// Check if blacklisted
-			blacklisted, err := q.blacklistRepo.Exists(id)
+			// Check if blacklisted for this user
+			blacklisted, err := q.blacklistRepo.Exists(id, playlist.UserID)
 			if err != nil {
 				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Blacklist check error for %s: %v", id, err))
 			}
@@ -272,7 +272,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		// Check 2: Global Server Music Limit
 		if globalLimitStr, err := q.settingsRepo.Get("global_storage_limit_bytes"); err == nil && globalLimitStr != "" {
 			if globalLimit, err := strconv.ParseInt(globalLimitStr, 10, 64); err == nil && globalLimit > 0 {
-				if stats, _ := q.trackRepo.GetStats(); stats != nil && stats.TotalStorageSize >= globalLimit {
+				if stats, _ := q.trackRepo.GetStats(""); stats != nil && stats.TotalStorageSize >= globalLimit {
 					msg := fmt.Sprintf("Достигнут общий лимит хранилища музыки на сервере (%d MB / %d MB). Синхронизация остановлена.", stats.TotalStorageSize/(1024*1024), globalLimit/(1024*1024))
 					q.log(&playlist.ID, nil, domain.LogLevelWarn, msg)
 					playlist.Status = domain.PlaylistStatusIdle
@@ -306,6 +306,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			ID:         trackID,
 			YouTubeID:  entry.GetID(),
 			PlaylistID: &playlist.ID,
+			UserID:     playlist.UserID,
 			Title:      trackTitle,
 			Artist:     entry.Uploader,
 			Duration:   entry.GetDuration(),
@@ -317,8 +318,8 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 
 		q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelInfo, fmt.Sprintf("[%d/%d] Fetching audio & tags: %s", currentIndex, totalToDownload, trackTitle))
 
-		// Download track via yt-dlp
-		res, dlErr := q.ytdlpClient.DownloadTrack(taskCtx, entry.GetID(), func(percent float64, speed, eta, status string) {
+		// Download track via yt-dlp using user's session
+		res, dlErr := q.ytdlpClient.DownloadTrackForUser(taskCtx, entry.GetID(), playlist.UserID, func(percent float64, speed, eta, status string) {
 			q.mu.Lock()
 			q.current.TrackPercentage = percent
 			q.current.Speed = speed
@@ -332,14 +333,14 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 
 		if dlErr != nil {
 			if taskCtx.Err() != nil {
-				_ = q.trackRepo.Delete(initialTrack.ID)
+				_ = q.trackRepo.Delete(initialTrack.ID, playlist.UserID)
 				playlist.Status = domain.PlaylistStatusIdle
 				_ = q.playlistRepo.Update(playlist)
 				return
 			}
 			failedCount++
 			// Remove the broken track from the database immediately so it never pollutes the library!
-			_ = q.trackRepo.Delete(initialTrack.ID)
+			_ = q.trackRepo.Delete(initialTrack.ID, playlist.UserID)
 			q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Failed to download %s: %v", trackTitle, dlErr))
 		} else {
 			successCount++

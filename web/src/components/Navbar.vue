@@ -56,6 +56,8 @@
           <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
         </svg>
         <span>{{ formatBytes(tracksStore.stats.total_storage_size) }}</span>
+        <span v-if="userQuota > 0" class="text-zinc-500">/ {{ formatBytes(userQuota) }}</span>
+        <span v-else-if="authStore.user?.is_admin" class="text-zinc-500">/ ∞</span>
         <span class="text-zinc-600">•</span>
         <span>{{ tracksStore.stats.total_tracks }} {{ i18n.t('nav.tracks') }}</span>
       </div>
@@ -64,15 +66,22 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import { useTracksStore } from '../stores/tracks'
 import { useSyncStore } from '../stores/sync'
 import { useI18nStore } from '../stores/i18n'
 
 defineEmits(['toggle-mobile-menu', 'open-sync'])
 
+const authStore = useAuthStore()
 const tracksStore = useTracksStore()
 const syncStore = useSyncStore()
 const i18n = useI18nStore()
+
+const userQuota = computed(() => {
+  return authStore.user?.storage_quota_bytes || 0
+})
 
 let debounceTimeout = null
 function onSearchInput() {

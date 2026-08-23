@@ -177,6 +177,10 @@ function onPlaylistCreated() {
 
 function confirmSignOut() {
   showSignOutConfirm.value = false
+  playerStore.stop()
+  tracksStore.tracks = []
+  tracksStore.stats = { total_tracks: 0, ready_tracks: 0, failed_tracks: 0, total_storage_size: 0, total_duration: 0 }
+  playlistsStore.playlists = []
   authStore.logout()
 }
 

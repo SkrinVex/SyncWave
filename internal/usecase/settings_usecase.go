@@ -3,7 +3,6 @@ package usecase
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -71,10 +70,11 @@ func (u *SettingsUsecase) GetSystemSettings(userID string) (*domain.SystemSettin
 	ytdlpVer, _ := u.ytdlpClient.GetYTDLPVersion()
 	ffmpegVer, _ := u.ytdlpClient.GetFFmpegVersion()
 
-	hasCookies := u.ytdlpClient.HasCookies()
-	cookiesMod, _ := u.ytdlpClient.GetCookiesModTime()
+	// User-specific cookies
+	hasCookies := u.ytdlpClient.HasUserCookies(userID)
+	cookiesMod, _ := u.ytdlpClient.GetUserCookiesModTime(userID)
 
-	stats, _ := u.trackRepo.GetStats()
+	stats, _ := u.trackRepo.GetStats(userID)
 	playlists, _ := u.playlistRepo.ListByUserID(userID)
 
 	var dbSize int64
@@ -173,13 +173,12 @@ func (u *SettingsUsecase) SetGlobalStorageLimit(bytes int64) error {
 	return u.settingsRepo.Set("global_storage_limit_bytes", strconv.FormatInt(bytes, 10))
 }
 
-func (u *SettingsUsecase) SaveCookies(content []byte) error {
-	return u.ytdlpClient.SaveCookies(content)
+func (u *SettingsUsecase) SaveCookies(userID string, content []byte) error {
+	return u.ytdlpClient.SaveUserCookies(userID, content)
 }
 
-func (u *SettingsUsecase) DeleteCookies() error {
-	cookiesPath := filepath.Join(u.dataDir, "cookies.txt")
-	return os.Remove(cookiesPath)
+func (u *SettingsUsecase) DeleteCookies(userID string) error {
+	return u.ytdlpClient.DeleteUserCookies(userID)
 }
 
 func (u *SettingsUsecase) TestProxy(proxyURL string) error {

@@ -329,8 +329,8 @@
           <span class="text-zinc-100 font-semibold truncate block">{{ settingsStore.settings.ffmpeg_version || 'Ready' }}</span>
         </div>
 
-        <!-- Physical Host Disk Total / Free -->
-        <div class="p-3.5 rounded-xl bg-studio-elevated border border-studio-border">
+        <!-- Physical Host Disk Total / Free (Admin Only) -->
+        <div v-if="authStore.user?.is_admin" class="p-3.5 rounded-xl bg-studio-elevated border border-studio-border">
           <span class="text-zinc-500 text-[10px] block">{{ i18n.t('settings.hostDiskTitle') }}</span>
           <span class="text-zinc-100 font-semibold">
             {{ formatBytes(settingsStore.settings.host_disk_used_bytes) }} / {{ formatBytes(settingsStore.settings.host_disk_total_bytes) }}

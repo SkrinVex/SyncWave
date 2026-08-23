@@ -45,6 +45,7 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SettingsHandler) UploadCookies(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	_ = r.ParseMultipartForm(10 << 20) // 10MB
 
 	var content []byte
@@ -64,7 +65,7 @@ func (h *SettingsHandler) UploadCookies(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	if err := h.settingsUsecase.SaveCookies(content); err != nil {
+	if err := h.settingsUsecase.SaveCookies(userID, content); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -73,7 +74,8 @@ func (h *SettingsHandler) UploadCookies(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *SettingsHandler) DeleteCookies(w http.ResponseWriter, r *http.Request) {
-	if err := h.settingsUsecase.DeleteCookies(); err != nil {
+	userID, _ := r.Context().Value("user_id").(string)
+	if err := h.settingsUsecase.DeleteCookies(userID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

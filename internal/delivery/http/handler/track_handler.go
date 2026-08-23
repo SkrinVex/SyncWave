@@ -19,6 +19,7 @@ func NewTrackHandler(trackUsecase *usecase.TrackUsecase) *TrackHandler {
 }
 
 func (h *TrackHandler) List(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	q := r.URL.Query()
 
 	page, _ := strconv.Atoi(q.Get("page"))
@@ -32,6 +33,7 @@ func (h *TrackHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filter := domain.TrackFilter{
+		UserID:     userID,
 		Query:      q.Get("q"),
 		PlaylistID: q.Get("playlist_id"),
 		Status:     domain.TrackStatus(q.Get("status")),
@@ -51,7 +53,8 @@ func (h *TrackHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TrackHandler) GetAllReady(w http.ResponseWriter, r *http.Request) {
-	tracks, err := h.trackUsecase.GetAllReady()
+	userID, _ := r.Context().Value("user_id").(string)
+	tracks, err := h.trackUsecase.GetAllReady(userID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -60,8 +63,9 @@ func (h *TrackHandler) GetAllReady(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TrackHandler) GetByID(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	id := chi.URLParam(r, "id")
-	track, err := h.trackUsecase.GetByID(id)
+	track, err := h.trackUsecase.GetByID(id, userID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Трек не найден"})
 		return
@@ -70,7 +74,8 @@ func (h *TrackHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TrackHandler) GetStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := h.trackUsecase.GetStats()
+	userID, _ := r.Context().Value("user_id").(string)
+	stats, err := h.trackUsecase.GetStats(userID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -79,8 +84,9 @@ func (h *TrackHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	id := chi.URLParam(r, "id")
-	if err := h.trackUsecase.Delete(id); err != nil {
+	if err := h.trackUsecase.Delete(id, userID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -92,13 +98,14 @@ type batchDeleteRequest struct {
 }
 
 func (h *TrackHandler) BatchDelete(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	var req batchDeleteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.IDs) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Необходимо указать список идентификаторов треков"})
 		return
 	}
 
-	if err := h.trackUsecase.BatchDelete(req.IDs); err != nil {
+	if err := h.trackUsecase.BatchDelete(req.IDs, userID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

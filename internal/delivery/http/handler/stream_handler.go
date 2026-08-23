@@ -21,7 +21,8 @@ func NewStreamHandler(trackUsecase *usecase.TrackUsecase) *StreamHandler {
 // StreamAudio serves audio files with full RFC 7233 Range support (HTTP 206 Partial Content)
 func (h *StreamHandler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	track, err := h.trackUsecase.GetByID(id)
+	userID, _ := r.Context().Value("user_id").(string)
+	track, err := h.trackUsecase.GetByID(id, userID)
 	if err != nil || track == nil || track.FilePath == "" {
 		http.Error(w, "track not found or not ready", http.StatusNotFound)
 		return
@@ -63,7 +64,8 @@ func (h *StreamHandler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 // ServeCover serves track cover art (JPEG)
 func (h *StreamHandler) ServeCover(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	track, err := h.trackUsecase.GetByID(id)
+	userID, _ := r.Context().Value("user_id").(string)
+	track, err := h.trackUsecase.GetByID(id, userID)
 	if err != nil || track == nil || track.CoverPath == "" {
 		http.Error(w, "cover not found", http.StatusNotFound)
 		return
@@ -91,7 +93,8 @@ func (h *StreamHandler) ServeCover(w http.ResponseWriter, r *http.Request) {
 // DownloadAudio forces browser download with Content-Disposition
 func (h *StreamHandler) DownloadAudio(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	track, err := h.trackUsecase.GetByID(id)
+	userID, _ := r.Context().Value("user_id").(string)
+	track, err := h.trackUsecase.GetByID(id, userID)
 	if err != nil || track == nil || track.FilePath == "" {
 		http.Error(w, "track not found", http.StatusNotFound)
 		return
