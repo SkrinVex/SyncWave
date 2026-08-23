@@ -159,7 +159,7 @@ func (c *Client) GetUserCookiesPath(userID string) string {
 			return userPath
 		}
 	}
-	// Fallback to legacy/root cookies file if it exists
+	// Fallback to root cookies file if it exists
 	if info, err := os.Stat(c.cookiesPath); err == nil && info.Size() > 0 {
 		return c.cookiesPath
 	}
@@ -238,7 +238,6 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 	}
 
 	args = append(args,
-		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
@@ -335,25 +334,22 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 	}
 
 	args = append(args,
-		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+		"--newline",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
 		"--remote-components", "ejs:github",
 		"-f", "bestaudio/best",
-		"-x",
+		"--extract-audio",
 		"--audio-format", format,
 		"--audio-quality", "0",
 		"--embed-thumbnail",
 		"--add-metadata",
-		"--write-thumbnail",
-		"--convert-thumbnails", "jpg",
 		"--no-playlist",
 		"-o", outTemplate,
 		"--print", "METADATA:%(id)s|||%(title)s|||%(artist)s|||%(album)s|||%(duration)s|||%(uploader)s|||%(channel)s",
 		"--no-simulate",
 		"--no-quiet",
-		"--newline",
 		targetURL,
 	)
 
@@ -387,7 +383,7 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID string, use
 		return res, nil
 	}
 
-	// Attempt 2: If failed with cookies, retry without cookies (fixes expired session errors)
+	// Attempt 2: If failed with cookies, retry without cookies (fixes expired session / client mismatch errors)
 	if hasCookies && trackCtx.Err() == nil {
 		res, err2 := c.executeDownloadForUser(trackCtx, targetURL, outTemplate, format, userID, false, onProgress)
 		if err2 == nil {
@@ -552,8 +548,6 @@ func (c *Client) TestProxyConnection(ctx context.Context, proxyURLStr string) er
 	if err != nil {
 		return err
 	}
-
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
 	resp, err := client.Do(req)
 	if err != nil {
