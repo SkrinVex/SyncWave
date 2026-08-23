@@ -3,7 +3,7 @@ package sqlite
 import (
 	"fmt"
 
-	"github.com/skrinvex/SyncWave/internal/domain"
+	"github.com/syncwave/syncwave/internal/domain"
 )
 
 type BlacklistRepo struct {
@@ -51,13 +51,13 @@ func (r *BlacklistRepo) Exists(youtubeID string) (bool, error) {
 func (r *BlacklistRepo) List(searchQuery string) ([]domain.BlacklistItem, error) {
 	query := `SELECT youtube_id, title, artist, created_at FROM blacklist`
 	var args []interface{}
-	
+
 	if searchQuery != "" {
 		query += ` WHERE title LIKE ? OR artist LIKE ?`
 		searchPattern := "%" + searchQuery + "%"
 		args = append(args, searchPattern, searchPattern)
 	}
-	
+
 	query += ` ORDER BY created_at DESC`
 
 	rows, err := r.db.Query(query, args...)
@@ -74,7 +74,7 @@ func (r *BlacklistRepo) List(searchQuery string) ([]domain.BlacklistItem, error)
 		}
 		items = append(items, item)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error during blacklist listing: %w", err)
 	}

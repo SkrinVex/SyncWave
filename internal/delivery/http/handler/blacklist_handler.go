@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/skrinvex/SyncWave/internal/domain"
+	"github.com/syncwave/syncwave/internal/domain"
 )
 
 type BlacklistHandler struct {

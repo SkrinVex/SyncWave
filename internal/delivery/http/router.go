@@ -3,6 +3,7 @@ package http
 import (
 	"io/fs"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -28,15 +29,22 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	// Global Middlewares
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.Logger)
+	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.NewCORSMiddleware())
+
+	// Create Rate Limiters
+	authLimiter := middleware.NewIPRateLimiter(10, 1*time.Minute)     // 10 requests / min for auth (bruteforce protection)
+	generalLimiter := middleware.NewIPRateLimiter(200, 1*time.Minute) // 200 requests / min for standard API
 
 	// API Subrouter
 	r.Route("/api/v1", func(api chi.Router) {
-		// Public Auth routes
+		api.Use(generalLimiter.Limit)
+
+		// Public Auth routes (with brute-force protection)
 		api.Route("/auth", func(auth chi.Router) {
 			auth.Get("/status", cfg.AuthHandler.Status)
-			auth.Post("/setup", cfg.AuthHandler.Setup)
-			auth.Post("/login", cfg.AuthHandler.Login)
+			auth.With(authLimiter.Limit).Post("/setup", cfg.AuthHandler.Setup)
+			auth.With(authLimiter.Limit).Post("/login", cfg.AuthHandler.Login)
 		})
 
 		// Protected routes

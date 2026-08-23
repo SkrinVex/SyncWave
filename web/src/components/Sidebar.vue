@@ -3,10 +3,14 @@
     <!-- Brand / Header -->
     <div>
       <div class="h-16 flex items-center px-6 gap-3 border-b border-studio-borderSubtle">
-        <div class="w-8 h-8 rounded-lg bg-studio-elevated border border-studio-border flex items-center justify-center text-indigo-400 font-bold">
+        <div class="w-8 h-8 rounded-lg bg-studio-elevated border border-studio-border flex items-center justify-center text-indigo-400">
           <!-- Soundwave Icon -->
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-            <path d="M12 3v18M17 7v10M22 10v4M7 7v10M2 10v4" stroke-linecap="round"/>
+          <svg class="w-5 h-5" viewBox="0 0 32 32" fill="none">
+            <rect x="5" y="12" width="2.5" height="8" rx="1.25" fill="currentColor" opacity="0.6"/>
+            <rect x="10" y="8" width="2.5" height="16" rx="1.25" fill="currentColor" opacity="0.85"/>
+            <rect x="15" y="4" width="2.5" height="24" rx="1.25" fill="#818cf8"/>
+            <rect x="20" y="8" width="2.5" height="16" rx="1.25" fill="currentColor" opacity="0.85"/>
+            <rect x="25" y="12" width="2.5" height="8" rx="1.25" fill="currentColor" opacity="0.6"/>
           </svg>
         </div>
         <div>
