@@ -365,7 +365,7 @@ func (r *TrackRepository) BatchDelete(ids []string, userID string) error {
 }
 
 func (r *TrackRepository) CleanBrokenTracks() error {
-	query := `DELETE FROM tracks WHERE status IN ('downloading', 'failed', 'queued');`
+	query := `DELETE FROM tracks WHERE status IN ('downloading', 'failed', 'queued') OR file_size < 300000;`
 	_, err := r.db.Exec(query)
 	return err
 }

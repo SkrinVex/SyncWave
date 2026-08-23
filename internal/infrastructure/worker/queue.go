@@ -55,25 +55,11 @@ func NewWorkerQueue(
 	// On startup, clean up any unfinished/broken tracks from previous crashes
 	_ = trackRepo.CleanBrokenTracks()
 
-	// Clean up any incomplete .part or .ytdl files left on disk from interrupted downloads
-	if musicDir := ytdlpClient.GetMusicDir(); musicDir != "" {
-		if partFiles, err := filepath.Glob(filepath.Join(musicDir, "*.part")); err == nil {
-			for _, f := range partFiles {
-				_ = os.Remove(f)
-			}
-		}
-		if ytdlFiles, err := filepath.Glob(filepath.Join(musicDir, "*.ytdl")); err == nil {
-			for _, f := range ytdlFiles {
-				_ = os.Remove(f)
-			}
-		}
-		if tempFiles, err := filepath.Glob(filepath.Join(musicDir, "*.temp")); err == nil {
-			for _, f := range tempFiles {
-				_ = os.Remove(f)
-			}
-		}
-	}
-
+	// Clean up any incomplete .part, .ytdl, .temp or corrupted <300KB stubs on disk
+		if allFiles, err := filepath.Glob(filepath.Join(musicDir, "*.*")); err == nil {
+			for _, f := range allFiles {
+				if strings.HasSuffix(f, ".part") || strings.HasSuffix(f, ".ytdl") || strings.HasSuffix(f, ".temp") {
+					_ = os.Remove(f)
 	return &WorkerQueue{
 		ytdlpClient:   ytdlpClient,
 		trackRepo:     trackRepo,
@@ -361,7 +347,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 
 		// Check if physical audio file already exists on server disk from previous syncs or other libraries
 		if existingTrack, _ := q.trackRepo.GetByYouTubeID(entry.GetID(), ""); existingTrack != nil && existingTrack.FilePath != "" {
-			if fi, err := os.Stat(existingTrack.FilePath); err == nil && fi.Size() > 1024 {
+			if fi, err := os.Stat(existingTrack.FilePath); err == nil && fi.Size() >= 300*1024 {
 				initialTrack.Title = existingTrack.Title
 				initialTrack.Artist = existingTrack.Artist
 				initialTrack.Album = existingTrack.Album
@@ -376,7 +362,6 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 				downloadedTime := time.Now().UTC()
 				initialTrack.DownloadedAt = &downloadedTime
 				_ = q.trackRepo.Update(initialTrack)
-
 				successCount++
 				q.log(&playlist.ID, &initialTrack.ID, domain.LogLevelSuccess, fmt.Sprintf("Archived (reused local file): %s - %s", initialTrack.Artist, initialTrack.Title))
 				q.eventHub.Broadcast(EventMessage{Type: EventTypeTrack, Data: initialTrack})
@@ -390,6 +375,11 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			q.current.TrackPercentage = percent
 			q.current.Speed = speed
 			q.current.ETA = eta
+			if status == "processing" {
+				q.current.StatusText = fmt.Sprintf("[%d/%d] Обработка: %s", currentIndex, totalToDownload, trackTitle)
+			} else {
+				q.current.StatusText = fmt.Sprintf("[%d/%d] %s", currentIndex, totalToDownload, trackTitle)
+			}
 			if totalToDownload > 0 {
 				q.current.Percentage = (float64(idx) + percent/100.0) / float64(totalToDownload) * 100.0
 			}
@@ -400,11 +390,6 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 		if dlErr != nil {
 			if taskCtx.Err() != nil {
 				_ = q.trackRepo.Delete(initialTrack.ID, playlist.UserID)
-				playlist.Status = domain.PlaylistStatusIdle
-				_ = q.playlistRepo.Update(playlist)
-				return
-			}
-			failedCount++
 			// Remove the broken track from the database immediately so it never pollutes the library!
 			_ = q.trackRepo.Delete(initialTrack.ID, playlist.UserID)
 

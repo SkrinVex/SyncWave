@@ -578,6 +578,8 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 			} else if matches := progressSimpleRegex.FindStringSubmatch(line); len(matches) >= 2 {
 				pct, _ := strconv.ParseFloat(matches[1], 64)
 				onProgress(pct, "", "", "downloading")
+			} else if strings.Contains(line, "[ExtractAudio]") || strings.Contains(line, "[ThumbnailsConvertor]") || strings.Contains(line, "[EmbedThumbnail]") || strings.Contains(line, "[Metadata]") {
+				onProgress(100, "", "", "processing")
 			}
 		}
 	}
@@ -651,12 +653,17 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 		}
 	}
 
-	// If audio file was successfully written to disk (>10KB), we recover from non-fatal exit errors (such as ffprobe thumbnail warnings)
-	if fi != nil && fi.Size() > 10240 {
+	// If audio file was successfully written to disk (>=300KB), we recover from non-fatal exit errors (such as ffprobe thumbnail warnings)
+	if fi != nil && fi.Size() >= 300*1024 {
 		if cmdErr != nil {
-			log.Printf("[yt-dlp RECOVERED] Audio file exists on disk (%s, %d bytes) despite exit code: %v", expectedAudioPath, fi.Size(), cmdErr)
+			log.Printf("[yt-dlp RECOVERED] Valid audio file exists on disk (%s, %d bytes) despite exit code: %v", expectedAudioPath, fi.Size(), cmdErr)
 			cmdErr = nil
 		}
+	} else if fi != nil && fi.Size() < 300*1024 && cmdErr != nil {
+		// Incomplete / corrupted stub file produced on error -> delete it so fallback search can run!
+		log.Printf("[yt-dlp WARN] Deleting incomplete/corrupted file stub (%s, %d bytes)", expectedAudioPath, fi.Size())
+		_ = os.Remove(expectedAudioPath)
+		fi = nil
 	}
 
 	if cmdErr != nil {
@@ -820,22 +827,39 @@ func (c *Client) OptimizeLibraryFaststart() {
 	if c.musicDir == "" {
 		return
 	}
-	matches, err := filepath.Glob(filepath.Join(c.musicDir, "*.m4a"))
-	if err != nil || len(matches) == 0 {
+	log.Printf("[Worker] Starting Faststart optimization scan in %s...", c.musicDir)
+	var allAudio []string
+	if matches, err := filepath.Glob(filepath.Join(c.musicDir, "*.m4a")); err == nil {
+		allAudio = append(allAudio, matches...)
+	}
+	if matches, err := filepath.Glob(filepath.Join(c.musicDir, "*.mp4")); err == nil {
+		allAudio = append(allAudio, matches...)
+	}
+
+	if len(allAudio) == 0 {
+		log.Printf("[Worker] Faststart optimization: No .m4a/.mp4 files found in %s", c.musicDir)
 		return
 	}
+
 	ffmpegBin := c.ffmpegPath
 	if ffmpegBin == "" {
 		ffmpegBin = "ffmpeg"
 	}
-	for _, m := range matches {
+
+	optimizedCount := 0
+	for _, m := range allAudio {
+		// Skip files smaller than 100KB
+		if fi, err := os.Stat(m); err == nil && fi.Size() < 100*1024 {
+			continue
+		}
 		tmpFast := m + ".fast.m4a"
 		fastCmd := exec.Command(ffmpegBin, "-y", "-i", m, "-c", "copy", "-movflags", "+faststart", tmpFast)
 		if fErr := fastCmd.Run(); fErr == nil {
 			_ = os.Rename(tmpFast, m)
+			optimizedCount++
 		} else {
 			_ = os.Remove(tmpFast)
 		}
 	}
-	log.Printf("[Worker] Faststart optimization verified for %d local audio files", len(matches))
+	log.Printf("[Worker] Faststart optimization verified and applied for %d/%d audio files", optimizedCount, len(allAudio))
 }
