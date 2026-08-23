@@ -248,7 +248,7 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 	args = append(args,
 		"--geo-bypass",
 		"--geo-bypass-country", "US",
-		"--extractor-args", "youtube:player_client=android_music,android,mweb,ios",
+		"--extractor-args", "youtube:player_client=tv,tv_downgraded,web_embedded,android_vr,android",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
@@ -347,7 +347,7 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--newline",
 		"--geo-bypass",
 		"--geo-bypass-country", "US",
-		"--extractor-args", "youtube:player_client=android_music,android,mweb,ios",
+		"--extractor-args", "youtube:player_client=tv,tv_downgraded,web_embedded,android_vr,android",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
@@ -383,7 +383,7 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 	}
 	c.mu.RUnlock()
 
-	targetURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", youtubeID)
+	targetURL := fmt.Sprintf("https://music.youtube.com/watch?v=%s", youtubeID)
 	outTemplate := filepath.Join(c.musicDir, fmt.Sprintf("%s.%%(ext)s", youtubeID))
 
 	// Track-level timeout: max 3 minutes per single track
@@ -392,7 +392,7 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 
 	hasCookies := c.HasUserCookies(userID)
 
-	// Attempt 1: Direct YouTube URL with cookies (if available)
+	// Attempt 1: Direct YouTube Music URL with cookies (if available)
 	res, err := c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, hasCookies, onProgress)
 	if err == nil {
 		return res, nil
@@ -407,11 +407,11 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 		err = err2
 	}
 
-	// Attempt 3: If direct video ID failed (e.g. removed/blocked) but title is known, search alternative
+	// Attempt 3: If direct video ID failed (e.g. removed/unavailable) but title is known, search alternative
 	if trackCtx.Err() == nil && title != "" && title != youtubeID {
 		searchQuery := title
 		if artist != "" && artist != "Unknown Artist" && !strings.Contains(strings.ToLower(title), strings.ToLower(artist)) {
-			searchQuery = fmt.Sprintf("%s %s audio", artist, title)
+			searchQuery = fmt.Sprintf("%s %s", artist, title)
 		}
 		searchURL := fmt.Sprintf("ytsearch1:%s", searchQuery)
 		res3, err3 := c.executeDownloadForUser(trackCtx, youtubeID, searchURL, outTemplate, format, userID, false, onProgress)
