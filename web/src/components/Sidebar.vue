@@ -102,7 +102,7 @@
     <div class="p-3 border-t border-studio-borderSubtle space-y-3">
       <!-- Install PWA Button -->
       <button
-        v-if="deferredPrompt"
+        v-if="!isStandalone"
         @click="installPwa"
         class="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-colors md:hidden"
       >
@@ -179,6 +179,7 @@ const toast = useToastStore()
 const i18n = useI18nStore()
 
 const deferredPrompt = ref(null)
+const isStandalone = ref(false)
 
 const handleInstallPrompt = (e) => {
   e.preventDefault()
@@ -186,6 +187,7 @@ const handleInstallPrompt = (e) => {
 }
 
 onMounted(() => {
+  isStandalone.value = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone
   window.addEventListener('beforeinstallprompt', handleInstallPrompt)
 })
 
@@ -194,11 +196,18 @@ onUnmounted(() => {
 })
 
 async function installPwa() {
-  if (!deferredPrompt.value) return
-  deferredPrompt.value.prompt()
-  const { outcome } = await deferredPrompt.value.userChoice
-  if (outcome === 'accepted') {
-    deferredPrompt.value = null
+  if (deferredPrompt.value) {
+    deferredPrompt.value.prompt()
+    const { outcome } = await deferredPrompt.value.userChoice
+    if (outcome === 'accepted') {
+      deferredPrompt.value = null
+    }
+  } else {
+    // Fallback for iOS / mobile browsers where beforeinstallprompt doesn't fire
+    const msg = i18n.currentLang === 'ru' 
+      ? 'Чтобы установить приложение, нажмите "Поделиться" или меню браузера и выберите "На экран домой".'
+      : 'To install the app, tap "Share" or the browser menu and select "Add to Home Screen".'
+    toast.info(msg, 5000)
   }
 }
 

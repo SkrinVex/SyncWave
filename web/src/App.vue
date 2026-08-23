@@ -20,7 +20,7 @@
         <!-- Mobile Drawer Backdrop -->
         <div
           v-if="mobileMenuOpen"
-          class="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm"
+          class="fixed inset-0 bg-black/80 z-50 md:hidden backdrop-blur-sm"
           @click="mobileMenuOpen = false"
         >
           <div class="w-64 h-full" @click.stop>
