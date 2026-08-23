@@ -51,15 +51,42 @@ func (r *PlaylistRepository) GetByID(id string) (*domain.Playlist, error) {
 	return r.scanPlaylist(r.db.QueryRow(query, id))
 }
 
-func (r *PlaylistRepository) GetByYouTubeID(youtubeID string) (*domain.Playlist, error) {
+func (r *PlaylistRepository) GetByIDAndUserID(id string, userID string) (*domain.Playlist, error) {
 	query := `
 	SELECT p.id, p.user_id, p.title, p.youtube_id, p.auto_sync, p.sync_interval_minutes,
 	       p.last_synced_at, p.status, p.error_message, p.created_at, p.updated_at,
 	       (SELECT COUNT(*) FROM tracks t WHERE t.playlist_id = p.id) AS track_count
 	FROM playlists p
-	WHERE p.youtube_id = ?;
-	`
-	return r.scanPlaylist(r.db.QueryRow(query, youtubeID))
+	WHERE p.id = ?`
+	var args []interface{}
+	args = append(args, id)
+
+	if userID != "" {
+		query += " AND (p.user_id = ? OR p.user_id = '')"
+		args = append(args, userID)
+	}
+	query += ";"
+
+	return r.scanPlaylist(r.db.QueryRow(query, args...))
+}
+
+func (r *PlaylistRepository) GetByYouTubeID(youtubeID string, userID string) (*domain.Playlist, error) {
+	query := `
+	SELECT p.id, p.user_id, p.title, p.youtube_id, p.auto_sync, p.sync_interval_minutes,
+	       p.last_synced_at, p.status, p.error_message, p.created_at, p.updated_at,
+	       (SELECT COUNT(*) FROM tracks t WHERE t.playlist_id = p.id) AS track_count
+	FROM playlists p
+	WHERE p.youtube_id = ?`
+	var args []interface{}
+	args = append(args, youtubeID)
+
+	if userID != "" {
+		query += " AND (p.user_id = ? OR p.user_id = '')"
+		args = append(args, userID)
+	}
+	query += ";"
+
+	return r.scanPlaylist(r.db.QueryRow(query, args...))
 }
 
 func (r *PlaylistRepository) ListByUserID(userID string) ([]domain.Playlist, error) {
@@ -160,9 +187,18 @@ func (r *PlaylistRepository) Update(p *domain.Playlist) error {
 	return nil
 }
 
-func (r *PlaylistRepository) Delete(id string) error {
-	query := `DELETE FROM playlists WHERE id = ?;`
-	res, err := r.db.Exec(query, id)
+func (r *PlaylistRepository) Delete(id string, userID string) error {
+	query := `DELETE FROM playlists WHERE id = ?`
+	var args []interface{}
+	args = append(args, id)
+
+	if userID != "" {
+		query += " AND (user_id = ? OR user_id = '')"
+		args = append(args, userID)
+	}
+	query += ";"
+
+	res, err := r.db.Exec(query, args...)
 	if err != nil {
 		return err
 	}

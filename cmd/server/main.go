@@ -65,7 +65,7 @@ func main() {
 
 	// 4. Usecases
 	authUsecase := usecase.NewAuthUsecase(userRepo, settingsRepo, hasher, jwtService)
-	trackUsecase := usecase.NewTrackUsecase(trackRepo, blacklistRepo)
+	trackUsecase := usecase.NewTrackUsecase(trackRepo, blacklistRepo, userRepo, settingsRepo, eventHub, cfg.MusicDir, cfg.CoversDir, cfg.FFmpegPath)
 	playlistUsecase := usecase.NewPlaylistUsecase(playlistRepo, ytdlpClient, workerQueue)
 	syncUsecase := usecase.NewSyncUsecase(playlistRepo, logRepo, workerQueue)
 	settingsUsecase := usecase.NewSettingsUsecase(settingsRepo, trackRepo, playlistRepo, userRepo, ytdlpClient, cfg.DataDir, cfg.DBPath)

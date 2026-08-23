@@ -70,5 +70,6 @@ type TrackRepository interface {
 	BatchDelete(ids []string, userID string) error
 	CleanBrokenTracks() error
 	GetStats(userID string) (*TrackStats, error)
-	GetAllReady(userID string) ([]Track, error)
+	GetAllReady(userID string, playlistID string) ([]Track, error)
+	CountTracksByFilePath(filePath string) (int, error)
 }

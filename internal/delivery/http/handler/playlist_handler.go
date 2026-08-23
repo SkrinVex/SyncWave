@@ -67,8 +67,9 @@ func (h *PlaylistHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PlaylistHandler) Get(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	id := chi.URLParam(r, "id")
-	pl, err := h.playlistUsecase.GetByID(id)
+	pl, err := h.playlistUsecase.GetByID(id, userID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Плейлист не найден"})
 		return
@@ -78,6 +79,7 @@ func (h *PlaylistHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PlaylistHandler) Update(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	id := chi.URLParam(r, "id")
 	var req createPlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -87,6 +89,7 @@ func (h *PlaylistHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	pl, err := h.playlistUsecase.Update(
 		id,
+		userID,
 		usecase.CreatePlaylistRequest{
 			Title:               req.Title,
 			YouTubeURLOrID:      req.URLOrID,
@@ -103,8 +106,9 @@ func (h *PlaylistHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PlaylistHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	id := chi.URLParam(r, "id")
-	if err := h.playlistUsecase.Delete(id); err != nil {
+	if err := h.playlistUsecase.Delete(id, userID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -113,8 +117,9 @@ func (h *PlaylistHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PlaylistHandler) Sync(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
 	id := chi.URLParam(r, "id")
-	if err := h.syncUsecase.TriggerSyncPlaylist(id); err != nil {
+	if err := h.playlistUsecase.TriggerSync(id, userID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

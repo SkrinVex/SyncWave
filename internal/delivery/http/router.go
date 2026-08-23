@@ -84,6 +84,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 					tracks.Get("/", cfg.TrackHandler.List)
 					tracks.Get("/stats", cfg.TrackHandler.GetStats)
 					tracks.Get("/ready", cfg.TrackHandler.GetAllReady)
+					tracks.Post("/upload", cfg.TrackHandler.Upload)
 					tracks.Post("/batch-delete", cfg.TrackHandler.BatchDelete)
 					tracks.Get("/{id}", cfg.TrackHandler.GetByID)
 					tracks.Delete("/{id}", cfg.TrackHandler.Delete)

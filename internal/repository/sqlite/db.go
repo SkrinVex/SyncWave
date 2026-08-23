@@ -66,8 +66,9 @@ func (db *DB) Migrate() error {
 
 	CREATE TABLE IF NOT EXISTS tracks (
 		id TEXT PRIMARY KEY,
-		youtube_id TEXT UNIQUE NOT NULL,
+		youtube_id TEXT NOT NULL,
 		playlist_id TEXT,
+		user_id TEXT,
 		title TEXT NOT NULL,
 		artist TEXT NOT NULL,
 		album TEXT NOT NULL DEFAULT '',
@@ -82,11 +83,14 @@ func (db *DB) Migrate() error {
 		downloaded_at DATETIME,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE SET NULL
+		FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE SET NULL,
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks(youtube_id);
 	CREATE INDEX IF NOT EXISTS idx_tracks_playlist_id ON tracks(playlist_id);
+	CREATE INDEX IF NOT EXISTS idx_tracks_user_id ON tracks(user_id);
+	CREATE INDEX IF NOT EXISTS idx_tracks_user_yt ON tracks(user_id, youtube_id);
 	CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
 	CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
 	CREATE INDEX IF NOT EXISTS idx_tracks_status ON tracks(status);
@@ -110,11 +114,15 @@ func (db *DB) Migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_sync_logs_created_at ON sync_logs(created_at DESC);
 
 	CREATE TABLE IF NOT EXISTS blacklist (
-		youtube_id TEXT PRIMARY KEY,
+		youtube_id TEXT NOT NULL,
+		user_id TEXT NOT NULL DEFAULT '',
 		title TEXT NOT NULL,
 		artist TEXT NOT NULL,
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (youtube_id, user_id)
 	);
+
+	CREATE INDEX IF NOT EXISTS idx_blacklist_user_id ON blacklist(user_id);
 	`
 
 	if _, err := db.Exec(baseSchema); err != nil {
@@ -124,10 +132,12 @@ func (db *DB) Migrate() error {
 	// 1. Safe migrations for existing databases (alter table column additions)
 	_, _ = db.Exec("ALTER TABLE users ADD COLUMN storage_quota_bytes INTEGER NOT NULL DEFAULT 10737418240;")
 	_, _ = db.Exec("ALTER TABLE tracks ADD COLUMN user_id TEXT;")
-	_, _ = db.Exec("ALTER TABLE blacklist ADD COLUMN user_id TEXT;")
+	_, _ = db.Exec("ALTER TABLE blacklist ADD COLUMN user_id TEXT NOT NULL DEFAULT '';")
 
 	// 2. Safe index creations after columns are guaranteed to exist
 	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_tracks_user_id ON tracks(user_id);")
+	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_tracks_user_yt ON tracks(user_id, youtube_id);")
+	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_blacklist_user_id ON blacklist(user_id);")
 
 	// 3. Populate tracks.user_id from parent playlists if empty
 	_, _ = db.Exec(`

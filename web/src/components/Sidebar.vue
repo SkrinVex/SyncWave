@@ -138,6 +138,25 @@
         <span>Установить приложение</span>
       </button>
 
+      <!-- Upload Music Button -->
+      <button
+        @click="triggerSidebarUpload"
+        class="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-medium bg-emerald-600/90 hover:bg-emerald-500 text-white shadow-sm transition-colors"
+      >
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+        </svg>
+        <span>{{ i18n.t('library.uploadBtn') }}</span>
+      </button>
+      <input
+        ref="sidebarFileInputRef"
+        type="file"
+        multiple
+        accept="audio/*,.mp3,.m4a,.flac,.opus,.ogg,.wav,.aac,.webm,.wma"
+        class="hidden"
+        @change="onSidebarFilesSelected"
+      />
+
       <!-- Quick Sync Trigger Button -->
       <button
         @click="triggerQuickSync"
@@ -188,6 +207,7 @@ import { useAuthStore } from '../stores/auth'
 import { useTracksStore } from '../stores/tracks'
 import { usePlaylistsStore } from '../stores/playlists'
 import { useSyncStore } from '../stores/sync'
+import { useUploadStore } from '../stores/upload'
 import { useToastStore } from '../stores/toast'
 import { useI18nStore } from '../stores/i18n'
 
@@ -204,8 +224,25 @@ const authStore = useAuthStore()
 const tracksStore = useTracksStore()
 const playlistsStore = usePlaylistsStore()
 const syncStore = useSyncStore()
+const uploadStore = useUploadStore()
 const toast = useToastStore()
 const i18n = useI18nStore()
+
+const sidebarFileInputRef = ref(null)
+
+function triggerSidebarUpload() {
+  if (sidebarFileInputRef.value) {
+    sidebarFileInputRef.value.value = ''
+    sidebarFileInputRef.value.click()
+  }
+}
+
+function onSidebarFilesSelected(e) {
+  const files = e.target.files
+  if (files && files.length > 0) {
+    uploadStore.uploadFiles(files, tracksStore.selectedPlaylist)
+  }
+}
 
 const userQuota = computed(() => {
   return authStore.user?.storage_quota_bytes || 0

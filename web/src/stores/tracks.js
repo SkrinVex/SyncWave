@@ -143,6 +143,22 @@ export const useTracksStore = defineStore('tracks', () => {
     return false
   }
 
+  async function fetchAllReadyTracks(playlistId = '') {
+    try {
+      const url = `/api/v1/tracks/ready${playlistId ? `?playlist_id=${encodeURIComponent(playlistId)}` : ''}`
+      const res = await fetch(url, {
+        headers: authStore.authHeaders(),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        return Array.isArray(data) ? data : []
+      }
+    } catch (e) {
+      console.error('Failed to fetch all ready tracks:', e)
+    }
+    return []
+  }
+
   return {
     tracks,
     total,
@@ -161,6 +177,7 @@ export const useTracksStore = defineStore('tracks', () => {
     getTrackDownloadUrl,
     updateTrack,
     fetchTracks,
+    fetchAllReadyTracks,
     fetchStats,
     deleteTrack,
     batchDelete,

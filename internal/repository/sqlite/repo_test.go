@@ -85,6 +85,7 @@ func TestTrackAndPlaylistRepository(t *testing.T) {
 	// Create tracks
 	track1 := &domain.Track{
 		ID:         uuid.New().String(),
+		UserID:     userID,
 		YouTubeID:  "yt-101",
 		PlaylistID: &playlistID,
 		Title:      "Solaris",
@@ -101,6 +102,7 @@ func TestTrackAndPlaylistRepository(t *testing.T) {
 
 	track2 := &domain.Track{
 		ID:         uuid.New().String(),
+		UserID:     userID,
 		YouTubeID:  "yt-102",
 		PlaylistID: &playlistID,
 		Title:      "Aura",
@@ -131,6 +133,23 @@ func TestTrackAndPlaylistRepository(t *testing.T) {
 	})
 	if err != nil || listRes.Total != 1 {
 		t.Fatalf("search filter failed, expected 1 track, got %d, err: %v", listRes.Total, err)
+	}
+
+	// GetAllReady tests
+	allReady, err := trackRepo.GetAllReady(userID, "")
+	if err != nil || len(allReady) != 2 {
+		t.Fatalf("expected 2 ready tracks, got %d, err: %v", len(allReady), err)
+	}
+
+	plReady, err := trackRepo.GetAllReady(userID, playlistID)
+	if err != nil || len(plReady) != 2 {
+		t.Fatalf("expected 2 ready tracks for playlist, got %d, err: %v", len(plReady), err)
+	}
+
+	// File count test
+	count, err := trackRepo.CountTracksByFilePath("/tmp/yt-101.opus")
+	if err != nil || count != 1 {
+		t.Fatalf("expected count 1 for file, got %d, err: %v", count, err)
 	}
 
 	// Stats test

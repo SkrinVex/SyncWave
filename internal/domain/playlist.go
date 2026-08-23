@@ -28,9 +28,10 @@ type Playlist struct {
 type PlaylistRepository interface {
 	Create(playlist *Playlist) error
 	GetByID(id string) (*Playlist, error)
-	GetByYouTubeID(youtubeID string) (*Playlist, error)
+	GetByIDAndUserID(id string, userID string) (*Playlist, error)
+	GetByYouTubeID(youtubeID string, userID string) (*Playlist, error)
 	ListByUserID(userID string) ([]Playlist, error)
 	ListAutoSync() ([]Playlist, error)
 	Update(playlist *Playlist) error
-	Delete(id string) error
+	Delete(id string, userID string) error
 }

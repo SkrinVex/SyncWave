@@ -245,7 +245,7 @@ func (r *TrackRepository) List(filter domain.TrackFilter) (*domain.TrackListResu
 	}, nil
 }
 
-func (r *TrackRepository) GetAllReady(userID string) ([]domain.Track, error) {
+func (r *TrackRepository) GetAllReady(userID string, playlistID string) ([]domain.Track, error) {
 	query := `
 	SELECT id, youtube_id, playlist_id, user_id, title, artist, album, duration,
 	       file_path, cover_path, file_size, format, bitrate, status,
@@ -257,6 +257,10 @@ func (r *TrackRepository) GetAllReady(userID string) ([]domain.Track, error) {
 	if userID != "" {
 		query += " AND user_id = ?"
 		args = append(args, userID)
+	}
+	if playlistID != "" {
+		query += " AND playlist_id = ?"
+		args = append(args, playlistID)
 	}
 	query += " ORDER BY created_at DESC;"
 
@@ -271,11 +275,11 @@ func (r *TrackRepository) GetAllReady(userID string) ([]domain.Track, error) {
 		var t domain.Track
 		var statusStr string
 		var downloadedAt sql.NullTime
-		var playlistID sql.NullString
+		var plID sql.NullString
 		var uID sql.NullString
 
 		err := rows.Scan(
-			&t.ID, &t.YouTubeID, &playlistID, &uID, &t.Title, &t.Artist, &t.Album, &t.Duration,
+			&t.ID, &t.YouTubeID, &plID, &uID, &t.Title, &t.Artist, &t.Album, &t.Duration,
 			&t.FilePath, &t.CoverPath, &t.FileSize, &t.Format, &t.Bitrate, &statusStr,
 			&t.ErrorMessage, &downloadedAt, &t.CreatedAt, &t.UpdatedAt,
 		)
@@ -284,8 +288,8 @@ func (r *TrackRepository) GetAllReady(userID string) ([]domain.Track, error) {
 		}
 
 		t.Status = domain.TrackStatus(statusStr)
-		if playlistID.Valid {
-			t.PlaylistID = &playlistID.String
+		if plID.Valid {
+			t.PlaylistID = &plID.String
 		}
 		if uID.Valid {
 			t.UserID = uID.String
@@ -296,6 +300,16 @@ func (r *TrackRepository) GetAllReady(userID string) ([]domain.Track, error) {
 		tracks = append(tracks, t)
 	}
 	return tracks, nil
+}
+
+func (r *TrackRepository) CountTracksByFilePath(filePath string) (int, error) {
+	if filePath == "" {
+		return 0, nil
+	}
+	var count int
+	query := `SELECT COUNT(*) FROM tracks WHERE file_path = ?;`
+	err := r.db.QueryRow(query, filePath).Scan(&count)
+	return count, err
 }
 
 func (r *TrackRepository) Update(t *domain.Track) error {

@@ -67,6 +67,9 @@
       <!-- Slide-over Play Queue Drawer -->
       <QueueDrawer />
 
+      <!-- Manual Music Upload Progress Drawer / Task Widget -->
+      <UploadProgressDrawer />
+
       <!-- Add YouTube Playlist Modal -->
       <AddPlaylistModal
         v-if="isAddPlaylistOpen"
@@ -116,6 +119,7 @@ import Sidebar from './components/Sidebar.vue'
 import Navbar from './components/Navbar.vue'
 import Player from './components/Player.vue'
 import QueueDrawer from './components/QueueDrawer.vue'
+import UploadProgressDrawer from './components/UploadProgressDrawer.vue'
 import AddPlaylistModal from './components/AddPlaylistModal.vue'
 import CookieExpiredModal from './components/CookieExpiredModal.vue'
 import SyncProgressBar from './components/SyncProgressBar.vue'

@@ -14,18 +14,31 @@
       <!-- Header -->
       <div class="h-16 px-5 border-b border-studio-border flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <h3 class="font-semibold text-zinc-100 text-sm">Play Queue</h3>
+          <h3 class="font-semibold text-zinc-100 text-sm">{{ i18n.t('player.queue') }}</h3>
           <span class="text-xs font-mono text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded">
-            {{ playerStore.queue.length }} tracks
+            {{ playerStore.queue.length }}
           </span>
         </div>
         <div class="flex items-center gap-2">
+          <!-- Reshuffle Queue Button -->
+          <button
+            v-if="playerStore.queue.length > 1"
+            @click="playerStore.reshuffleQueue"
+            class="flex items-center gap-1 text-[11px] font-medium text-indigo-300 hover:text-white transition-colors px-2 py-1 rounded-md bg-indigo-950/80 hover:bg-indigo-900/80 border border-indigo-800/80 shadow-sm"
+            :title="i18n.t('player.reshuffle')"
+          >
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.6-8.6c.8-1.1 2-1.7 3.3-1.7H22M2 6h1.4c1.3 0 2.5.6 3.3 1.7l2 2.6M22 18h-5.4c-1.3 0-2.5-.6-3.3-1.7l-2-2.6M18 14l4 4-4 4M18 2l4 4-4 4"/>
+            </svg>
+            <span>{{ i18n.t('player.shuffle') }}</span>
+          </button>
+
           <button
             v-if="playerStore.queue.length > 1"
             @click="playerStore.clearQueue"
             class="text-xs text-zinc-400 hover:text-rose-400 transition-colors px-2 py-1 rounded"
           >
-            Clear
+            {{ i18n.t('player.clearQueue') }}
           </button>
           <button
             @click="playerStore.isQueueOpen = false"
@@ -38,7 +51,7 @@
 
       <!-- Now Playing Section -->
       <div v-if="playerStore.currentTrack" class="p-4 border-b border-studio-borderSubtle bg-zinc-900/40">
-        <span class="text-[10px] font-mono text-indigo-400 uppercase font-semibold tracking-wider">Now Playing</span>
+        <span class="text-[10px] font-mono text-indigo-400 uppercase font-semibold tracking-wider">{{ i18n.t('player.nowPlaying') }}</span>
         <div class="flex items-center gap-3 mt-2">
           <img
             :src="tracksStore.getTrackCoverUrl(playerStore.currentTrack)"

@@ -141,15 +141,45 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
+  function shuffleArray(array) {
+    const arr = [...array]
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[arr[i], arr[j]] = [arr[j], arr[i]]
+    }
+    return arr
+  }
+
+  function reshuffleQueue() {
+    if (queue.value.length <= 1) return
+    const cur = currentTrack.value
+    if (!cur) {
+      queue.value = shuffleArray(queue.value)
+      queueIndex.value = 0
+      return
+    }
+
+    const otherTracks = queue.value.filter(t => t.id !== cur.id)
+    const shuffledOthers = shuffleArray(otherTracks)
+    queue.value = [cur, ...shuffledOthers]
+    queueIndex.value = 0
+  }
+
   function playTrack(track, newQueue = null) {
     if (!track) return
 
     if (newQueue && Array.isArray(newQueue) && newQueue.length > 0) {
-      queue.value = [...newQueue]
-      queueIndex.value = queue.value.findIndex(t => t.id === track.id)
-      if (queueIndex.value === -1) {
-        queue.value.unshift(track)
+      if (isShuffle.value) {
+        const otherTracks = newQueue.filter(t => t.id !== track.id)
+        queue.value = [track, ...shuffleArray(otherTracks)]
         queueIndex.value = 0
+      } else {
+        queue.value = [...newQueue]
+        queueIndex.value = queue.value.findIndex(t => t.id === track.id)
+        if (queueIndex.value === -1) {
+          queue.value.unshift(track)
+          queueIndex.value = 0
+        }
       }
     } else if (queue.value.length === 0) {
       queue.value = [track]
@@ -245,17 +275,13 @@ export const usePlayerStore = defineStore('player', () => {
   function next() {
     if (queue.value.length === 0) return
 
-    if (isShuffle.value) {
-      const nextIdx = Math.floor(Math.random() * queue.value.length)
-      queueIndex.value = nextIdx
-      playTrack(queue.value[nextIdx])
-      return
-    }
-
     if (queueIndex.value < queue.value.length - 1) {
       queueIndex.value++
       playTrack(queue.value[queueIndex.value])
     } else if (loopMode.value === 'all') {
+      if (isShuffle.value) {
+        reshuffleQueue()
+      }
       queueIndex.value = 0
       playTrack(queue.value[0])
     } else {
@@ -282,6 +308,9 @@ export const usePlayerStore = defineStore('player', () => {
   function toggleShuffle() {
     isShuffle.value = !isShuffle.value
     localStorage.setItem('syncwave_shuffle', isShuffle.value.toString())
+    if (isShuffle.value) {
+      reshuffleQueue()
+    }
   }
 
   function addToQueue(track) {
@@ -358,6 +387,7 @@ export const usePlayerStore = defineStore('player', () => {
     prev,
     toggleLoop,
     toggleShuffle,
+    reshuffleQueue,
     addToQueue,
     playNext,
     removeFromQueue,

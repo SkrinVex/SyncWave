@@ -54,12 +54,59 @@ func (h *TrackHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *TrackHandler) GetAllReady(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value("user_id").(string)
-	tracks, err := h.trackUsecase.GetAllReady(userID)
+	playlistID := r.URL.Query().Get("playlist_id")
+	tracks, err := h.trackUsecase.GetAllReady(userID, playlistID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, tracks)
+}
+
+func (h *TrackHandler) Upload(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
+
+	// Max 500 MB upload
+	if err := r.ParseMultipartForm(500 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Ошибка обработки формы загрузки: файл слишком большой"})
+		return
+	}
+
+	playlistID := r.FormValue("playlist_id")
+	if r.MultipartForm == nil || len(r.MultipartForm.File) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Файлы для загрузки не найдены"})
+		return
+	}
+
+	var inputs []usecase.UploadTrackInput
+	for _, fileHeaders := range r.MultipartForm.File {
+		for _, fh := range fileHeaders {
+			f, err := fh.Open()
+			if err != nil {
+				continue
+			}
+			defer f.Close()
+
+			inputs = append(inputs, usecase.UploadTrackInput{
+				Filename: fh.Filename,
+				Reader:   f,
+				Size:     fh.Size,
+			})
+		}
+	}
+
+	if len(inputs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Не удалось открыть прикрепленные файлы"})
+		return
+	}
+
+	result, err := h.trackUsecase.UploadTracks(r.Context(), userID, playlistID, inputs)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *TrackHandler) GetByID(w http.ResponseWriter, r *http.Request) {

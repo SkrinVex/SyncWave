@@ -45,12 +45,12 @@ func (u *PlaylistUsecase) Create(userID string, req CreatePlaylistRequest) (*dom
 
 	normalizedInput := ytdlp.NormalizePlaylistURL(cleanInput)
 
-	// Check if already registered
-	existing, _ := u.playlistRepo.GetByYouTubeID(cleanInput)
+	// Check if already registered for THIS user
+	existing, _ := u.playlistRepo.GetByYouTubeID(cleanInput, userID)
 	if existing != nil {
 		return nil, errors.New("Этот плейлист уже добавлен в список ваших подписок")
 	}
-	existingNorm, _ := u.playlistRepo.GetByYouTubeID(normalizedInput)
+	existingNorm, _ := u.playlistRepo.GetByYouTubeID(normalizedInput, userID)
 	if existingNorm != nil {
 		return nil, errors.New("Этот плейлист уже добавлен в список ваших подписок")
 	}
@@ -101,12 +101,12 @@ func (u *PlaylistUsecase) List(userID string) ([]domain.Playlist, error) {
 	return u.playlistRepo.ListByUserID(userID)
 }
 
-func (u *PlaylistUsecase) GetByID(id string) (*domain.Playlist, error) {
-	return u.playlistRepo.GetByID(id)
+func (u *PlaylistUsecase) GetByID(id string, userID string) (*domain.Playlist, error) {
+	return u.playlistRepo.GetByIDAndUserID(id, userID)
 }
 
-func (u *PlaylistUsecase) Update(id string, req CreatePlaylistRequest) (*domain.Playlist, error) {
-	p, err := u.playlistRepo.GetByID(id)
+func (u *PlaylistUsecase) Update(id string, userID string, req CreatePlaylistRequest) (*domain.Playlist, error) {
+	p, err := u.playlistRepo.GetByIDAndUserID(id, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -129,12 +129,12 @@ func (u *PlaylistUsecase) Update(id string, req CreatePlaylistRequest) (*domain.
 	return p, nil
 }
 
-func (u *PlaylistUsecase) Delete(id string) error {
-	return u.playlistRepo.Delete(id)
+func (u *PlaylistUsecase) Delete(id string, userID string) error {
+	return u.playlistRepo.Delete(id, userID)
 }
 
-func (u *PlaylistUsecase) TriggerSync(id string) error {
-	p, err := u.playlistRepo.GetByID(id)
+func (u *PlaylistUsecase) TriggerSync(id string, userID string) error {
+	p, err := u.playlistRepo.GetByIDAndUserID(id, userID)
 	if err != nil {
 		return err
 	}

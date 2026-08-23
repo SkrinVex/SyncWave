@@ -1,5 +1,34 @@
 <template>
-  <div class="space-y-6 pb-32 text-left">
+  <div
+    class="space-y-6 pb-32 text-left relative"
+    @dragover.prevent="onDragOver"
+    @dragleave.prevent="onDragLeave"
+    @drop.prevent="onDrop"
+  >
+    <!-- Drag and Drop Fullscreen Dropzone Overlay -->
+    <div
+      v-if="isDraggingOver"
+      class="fixed inset-0 z-50 bg-indigo-950/80 backdrop-blur-md border-4 border-dashed border-indigo-500 flex flex-col items-center justify-center pointer-events-none animate-pulse select-none"
+    >
+      <div class="w-20 h-20 rounded-3xl bg-indigo-600/30 border border-indigo-400 flex items-center justify-center text-indigo-300 mb-4 shadow-2xl">
+        <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+        </svg>
+      </div>
+      <h3 class="text-xl font-bold text-white">{{ i18n.t('library.dragDropTitle') }}</h3>
+      <p class="text-xs text-indigo-200 mt-2">MP3, FLAC, M4A, Opus, Ogg, WAV, AAC</p>
+    </div>
+
+    <!-- Hidden file input for file selection -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      multiple
+      accept="audio/*,.mp3,.m4a,.flac,.opus,.ogg,.wav,.aac,.webm,.wma"
+      class="hidden"
+      @change="onFilesSelected"
+    />
+
     <!-- Header: Title & Action Controls -->
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 select-none">
       <div>
@@ -12,6 +41,18 @@
 
       <!-- Action Buttons & View Mode -->
       <div class="flex items-center gap-2.5 flex-wrap">
+        <!-- Upload Music Button -->
+        <button
+          @click="triggerUploadDialog"
+          class="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md active:scale-95"
+          :title="i18n.t('library.uploadBtn')"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+          </svg>
+          <span>{{ i18n.t('library.uploadBtn') }}</span>
+        </button>
+
         <!-- Play All -->
         <button
           v-if="tracksStore.tracks.length > 0"
@@ -151,12 +192,23 @@
       <p class="text-xs text-zinc-400 max-w-sm mt-1 mb-6">
         {{ i18n.t('library.emptyDesc') }}
       </p>
-      <button
-        @click="$emit('open-add-playlist')"
-        class="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all shadow-lg active:scale-95"
-      >
-        {{ i18n.t('library.addPlaylistBtn') }}
-      </button>
+      <div class="flex items-center gap-3 flex-wrap justify-center">
+        <button
+          @click="triggerUploadDialog"
+          class="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all shadow-lg active:scale-95 flex items-center gap-2"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+          </svg>
+          <span>{{ i18n.t('library.uploadFirstBtn') }}</span>
+        </button>
+        <button
+          @click="$emit('open-add-playlist')"
+          class="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all shadow-lg active:scale-95"
+        >
+          {{ i18n.t('library.addPlaylistBtn') }}
+        </button>
+      </div>
     </div>
 
     <!-- Grid View Layout -->
@@ -294,6 +346,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useTracksStore } from '../stores/tracks'
 import { usePlaylistsStore } from '../stores/playlists'
 import { usePlayerStore } from '../stores/player'
+import { useUploadStore } from '../stores/upload'
 import { useToastStore } from '../stores/toast'
 import { useI18nStore } from '../stores/i18n'
 import TrackCard from '../components/TrackCard.vue'
@@ -305,6 +358,7 @@ defineEmits(['open-add-playlist'])
 const tracksStore = useTracksStore()
 const playlistsStore = usePlaylistsStore()
 const playerStore = usePlayerStore()
+const uploadStore = useUploadStore()
 const toast = useToastStore()
 const i18n = useI18nStore()
 
@@ -312,6 +366,8 @@ const viewMode = ref(localStorage.getItem('syncwave_view_mode') || 'grid')
 const trackToDelete = ref(null)
 const selectedTrackIds = ref(new Set())
 const showBatchDeleteConfirm = ref(false)
+const fileInputRef = ref(null)
+const isDraggingOver = ref(false)
 
 const isAllSelected = computed(() => {
   return tracksStore.tracks.length > 0 && tracksStore.tracks.every(t => selectedTrackIds.value.has(t.id))
@@ -322,6 +378,37 @@ onMounted(() => {
   tracksStore.fetchStats()
   playlistsStore.fetchPlaylists()
 })
+
+function triggerUploadDialog() {
+  if (fileInputRef.value) {
+    fileInputRef.value.value = ''
+    fileInputRef.value.click()
+  }
+}
+
+function onFilesSelected(e) {
+  const files = e.target.files
+  if (files && files.length > 0) {
+    uploadStore.uploadFiles(files, tracksStore.selectedPlaylist)
+  }
+}
+
+function onDragOver(e) {
+  isDraggingOver.value = true
+}
+
+function onDragLeave(e) {
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    isDraggingOver.value = false
+  }
+}
+
+function onDrop(e) {
+  isDraggingOver.value = false
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    uploadStore.uploadFiles(e.dataTransfer.files, tracksStore.selectedPlaylist)
+  }
+}
 
 function toggleTrackSelect(track) {
   const newSet = new Set(selectedTrackIds.value)
@@ -379,19 +466,25 @@ function changePage(p) {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-function handlePlay(track) {
-  playerStore.playTrack(track, tracksStore.tracks)
+async function handlePlay(track) {
+  // Fetch the full list of tracks in the current scope (selected playlist or entire library)
+  const fullReadyTracks = await tracksStore.fetchAllReadyTracks(tracksStore.selectedPlaylist)
+  const queueToUse = fullReadyTracks.length > 0 ? fullReadyTracks : tracksStore.tracks
+  playerStore.playTrack(track, queueToUse)
 }
 
-function playAll(shuffle = false) {
-  if (tracksStore.tracks.length === 0) return
+async function playAll(shuffle = false) {
+  const fullReadyTracks = await tracksStore.fetchAllReadyTracks(tracksStore.selectedPlaylist)
+  const queueToUse = fullReadyTracks.length > 0 ? fullReadyTracks : tracksStore.tracks
+  if (queueToUse.length === 0) return
+
   if (shuffle) {
     playerStore.isShuffle = true
-    const rndIndex = Math.floor(Math.random() * tracksStore.tracks.length)
-    playerStore.playTrack(tracksStore.tracks[rndIndex], tracksStore.tracks)
+    const rndIndex = Math.floor(Math.random() * queueToUse.length)
+    playerStore.playTrack(queueToUse[rndIndex], queueToUse)
   } else {
     playerStore.isShuffle = false
-    playerStore.playTrack(tracksStore.tracks[0], tracksStore.tracks)
+    playerStore.playTrack(queueToUse[0], queueToUse)
   }
 }
 
