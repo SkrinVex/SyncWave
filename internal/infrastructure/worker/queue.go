@@ -56,10 +56,20 @@ func NewWorkerQueue(
 	_ = trackRepo.CleanBrokenTracks()
 
 	// Clean up any incomplete .part, .ytdl, .temp or corrupted <300KB stubs on disk
+	if musicDir := ytdlpClient.GetMusicDir(); musicDir != "" {
 		if allFiles, err := filepath.Glob(filepath.Join(musicDir, "*.*")); err == nil {
 			for _, f := range allFiles {
 				if strings.HasSuffix(f, ".part") || strings.HasSuffix(f, ".ytdl") || strings.HasSuffix(f, ".temp") {
 					_ = os.Remove(f)
+				} else if !strings.HasSuffix(f, ".jpg") && !strings.HasSuffix(f, ".png") && !strings.HasSuffix(f, ".webp") {
+					if info, sErr := os.Stat(f); sErr == nil && info.Size() < 300*1024 {
+						_ = os.Remove(f)
+					}
+				}
+			}
+		}
+	}
+
 	return &WorkerQueue{
 		ytdlpClient:   ytdlpClient,
 		trackRepo:     trackRepo,
