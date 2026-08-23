@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -42,6 +43,7 @@ func (db *DB) Migrate() error {
 		username TEXT UNIQUE NOT NULL,
 		password_hash TEXT NOT NULL,
 		is_admin INTEGER NOT NULL DEFAULT 0,
+		storage_quota_bytes INTEGER NOT NULL DEFAULT 10737418240,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);
@@ -89,8 +91,6 @@ func (db *DB) Migrate() error {
 
 	CREATE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks(youtube_id);
 	CREATE INDEX IF NOT EXISTS idx_tracks_playlist_id ON tracks(playlist_id);
-	CREATE INDEX IF NOT EXISTS idx_tracks_user_id ON tracks(user_id);
-	CREATE INDEX IF NOT EXISTS idx_tracks_user_yt ON tracks(user_id, youtube_id);
 	CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
 	CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
 	CREATE INDEX IF NOT EXISTS idx_tracks_status ON tracks(status);
@@ -112,7 +112,6 @@ func (db *DB) Migrate() error {
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_sync_logs_user_id ON sync_logs(user_id);
 	CREATE INDEX IF NOT EXISTS idx_sync_logs_created_at ON sync_logs(created_at DESC);
 
 	CREATE TABLE IF NOT EXISTS blacklist (
@@ -123,21 +122,19 @@ func (db *DB) Migrate() error {
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (youtube_id, user_id)
 	);
-
-	CREATE INDEX IF NOT EXISTS idx_blacklist_user_id ON blacklist(user_id);
 	`
 
 	if _, err := db.Exec(baseSchema); err != nil {
 		return err
 	}
 
-	// 1. Safe migrations for existing databases (alter table column additions)
-	_, _ = db.Exec("ALTER TABLE users ADD COLUMN storage_quota_bytes INTEGER NOT NULL DEFAULT 10737418240;")
-	_, _ = db.Exec("ALTER TABLE tracks ADD COLUMN user_id TEXT;")
-	_, _ = db.Exec("ALTER TABLE blacklist ADD COLUMN user_id TEXT NOT NULL DEFAULT '';")
-	_, _ = db.Exec("ALTER TABLE sync_logs ADD COLUMN user_id TEXT NOT NULL DEFAULT '';")
+	// 1. Safe migrations for existing databases (ensure all columns exist before creating indexes on them)
+	addColumnIfNotExists(db.DB, "users", "storage_quota_bytes INTEGER NOT NULL DEFAULT 10737418240", "storage_quota_bytes")
+	addColumnIfNotExists(db.DB, "tracks", "user_id TEXT", "user_id")
+	addColumnIfNotExists(db.DB, "blacklist", "user_id TEXT NOT NULL DEFAULT ''", "user_id")
+	addColumnIfNotExists(db.DB, "sync_logs", "user_id TEXT NOT NULL DEFAULT ''", "user_id")
 
-	// 2. Safe index creations after columns are guaranteed to exist
+	// 2. Safe index creations (after columns are guaranteed to exist in old and new DBs)
 	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_tracks_user_id ON tracks(user_id);")
 	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_tracks_user_yt ON tracks(user_id, youtube_id);")
 	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_blacklist_user_id ON blacklist(user_id);")
@@ -170,4 +167,29 @@ func (db *DB) Migrate() error {
 	`)
 
 	return nil
+}
+
+func addColumnIfNotExists(db *sql.DB, tableName, columnDef string, columnName string) {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s);", tableName))
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	exists := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err == nil {
+			if strings.EqualFold(name, columnName) {
+				exists = true
+				break
+			}
+		}
+	}
+	if !exists {
+		_, _ = db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", tableName, columnDef))
+	}
 }

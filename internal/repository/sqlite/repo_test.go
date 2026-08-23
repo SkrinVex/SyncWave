@@ -1,6 +1,7 @@
 package sqlite_test
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -195,5 +196,98 @@ func TestSettingsAndLogs(t *testing.T) {
 	otherLogs, err := logRepo.ListRecent(10, "other-user")
 	if err != nil || len(otherLogs) != 0 {
 		t.Fatalf("expected 0 logs for other user, got %d", len(otherLogs))
+	}
+}
+
+func TestLegacyMigration(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "legacy.db")
+
+	// 1. Manually create old legacy tables WITHOUT user_id and storage_quota_bytes
+	legacySchema := `
+	CREATE TABLE users (
+		id TEXT PRIMARY KEY,
+		username TEXT UNIQUE NOT NULL,
+		password_hash TEXT NOT NULL,
+		is_admin INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE playlists (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL,
+		title TEXT NOT NULL,
+		youtube_id TEXT NOT NULL,
+		auto_sync INTEGER NOT NULL DEFAULT 1,
+		sync_interval_minutes INTEGER NOT NULL DEFAULT 60,
+		last_synced_at DATETIME,
+		status TEXT NOT NULL DEFAULT 'idle',
+		error_message TEXT NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE tracks (
+		id TEXT PRIMARY KEY,
+		youtube_id TEXT NOT NULL,
+		playlist_id TEXT,
+		title TEXT NOT NULL,
+		artist TEXT NOT NULL,
+		album TEXT NOT NULL DEFAULT '',
+		duration INTEGER NOT NULL DEFAULT 0,
+		file_path TEXT NOT NULL DEFAULT '',
+		cover_path TEXT NOT NULL DEFAULT '',
+		file_size INTEGER NOT NULL DEFAULT 0,
+		format TEXT NOT NULL DEFAULT 'opus',
+		bitrate INTEGER NOT NULL DEFAULT 0,
+		status TEXT NOT NULL DEFAULT 'ready',
+		error_message TEXT NOT NULL DEFAULT '',
+		downloaded_at DATETIME,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE sync_logs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		playlist_id TEXT,
+		track_id TEXT,
+		level TEXT NOT NULL,
+		message TEXT NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE blacklist (
+		youtube_id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		artist TEXT NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("failed to open raw sqlite: %v", err)
+	}
+	if _, err := db.Exec(legacySchema); err != nil {
+		t.Fatalf("failed to create legacy schema: %v", err)
+	}
+	db.Close()
+
+	// 2. Now open with NewDB (which runs Migrate) and verify no errors
+	upgradedDB, err := sqlite.NewDB(dbPath)
+	if err != nil {
+		t.Fatalf("failed to upgrade legacy db: %v", err)
+	}
+	defer upgradedDB.Close()
+
+	// 3. Verify user_id column now exists and works
+	trackRepo := sqlite.NewTrackRepository(upgradedDB)
+	tracks, err := trackRepo.GetAllReady("some-user", "")
+	if err != nil {
+		t.Fatalf("failed to query upgraded tracks: %v", err)
+	}
+	if len(tracks) != 0 {
+		t.Fatalf("expected 0 tracks, got %d", len(tracks))
 	}
 }
