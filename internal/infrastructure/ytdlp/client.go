@@ -238,6 +238,8 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 	}
 
 	args = append(args,
+		"--geo-bypass",
+		"--geo-bypass-country", "US",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
@@ -335,6 +337,8 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 
 	args = append(args,
 		"--newline",
+		"--geo-bypass",
+		"--geo-bypass-country", "US",
 		"--no-check-certificates",
 		"--no-warnings",
 		"--js-runtimes", "node",
@@ -357,10 +361,10 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 }
 
 func (c *Client) DownloadTrack(ctx context.Context, youtubeID string, onProgress ProgressCallback) (*DownloadResult, error) {
-	return c.DownloadTrackForUser(ctx, youtubeID, "", onProgress)
+	return c.DownloadTrackForUser(ctx, youtubeID, "", "", "", onProgress)
 }
 
-func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID string, userID string, onProgress ProgressCallback) (*DownloadResult, error) {
+func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, artist, userID string, onProgress ProgressCallback) (*DownloadResult, error) {
 	c.mu.RLock()
 	format := c.audioFormat
 	if format == "" {
@@ -377,25 +381,42 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID string, use
 
 	hasCookies := c.HasUserCookies(userID)
 
-	// Attempt 1: Standard YouTube URL with cookies (if available)
-	res, err := c.executeDownloadForUser(trackCtx, targetURL, outTemplate, format, userID, hasCookies, onProgress)
+	// Attempt 1: Direct YouTube URL with cookies (if available)
+	res, err := c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, hasCookies, onProgress)
 	if err == nil {
 		return res, nil
 	}
 
 	// Attempt 2: If failed with cookies, retry without cookies (fixes expired session / client mismatch errors)
 	if hasCookies && trackCtx.Err() == nil {
-		res, err2 := c.executeDownloadForUser(trackCtx, targetURL, outTemplate, format, userID, false, onProgress)
+		res, err2 := c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, false, onProgress)
 		if err2 == nil {
 			return res, nil
 		}
 		err = err2
 	}
 
+	// Attempt 3: Smart Alternative Search Fallback (if title/artist available and direct video ID is geo-restricted or unavailable)
+	searchQuery := strings.TrimSpace(fmt.Sprintf("%s %s audio", artist, title))
+	if (title != "" && title != youtubeID) && trackCtx.Err() == nil {
+		searchTarget := fmt.Sprintf("ytsearch1:%s", searchQuery)
+		res, err3 := c.executeDownloadForUser(trackCtx, youtubeID, searchTarget, outTemplate, format, userID, hasCookies, onProgress)
+		if err3 == nil {
+			if res.Title == "Unknown Title" || res.Title == "" {
+				res.Title = title
+			}
+			if res.Artist == "Unknown Artist" || res.Artist == "" {
+				res.Artist = artist
+			}
+			return res, nil
+		}
+		err = err3
+	}
+
 	return nil, err
 }
 
-func (c *Client) executeDownloadForUser(ctx context.Context, targetURL, outTemplate, format string, userID string, withCookies bool, onProgress ProgressCallback) (*DownloadResult, error) {
+func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targetURL, outTemplate, format string, userID string, withCookies bool, onProgress ProgressCallback) (*DownloadResult, error) {
 	args := c.buildDownloadArgsForUser(targetURL, outTemplate, format, userID, withCookies)
 
 	cmd := exec.CommandContext(ctx, c.ytdlpPath, args...)
@@ -447,12 +468,13 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetURL, outTempl
 		return nil, fmt.Errorf("download failed: %w (stderr: %s)", cmdErr, stderrBuf.String())
 	}
 
-	// Extract YouTube ID from targetURL
-	var youtubeID string
-	if idx := strings.Index(targetURL, "v="); idx != -1 {
-		youtubeID = targetURL[idx+2:]
-		if amp := strings.Index(youtubeID, "&"); amp != -1 {
-			youtubeID = youtubeID[:amp]
+	youtubeID := targetTrackID
+	if youtubeID == "" {
+		if idx := strings.Index(targetURL, "v="); idx != -1 {
+			youtubeID = targetURL[idx+2:]
+			if amp := strings.Index(youtubeID, "&"); amp != -1 {
+				youtubeID = youtubeID[:amp]
+			}
 		}
 	}
 

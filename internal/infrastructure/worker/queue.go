@@ -344,8 +344,8 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 			}
 		}
 
-		// Download track via yt-dlp using user's session
-		res, dlErr := q.ytdlpClient.DownloadTrackForUser(taskCtx, entry.GetID(), playlist.UserID, func(percent float64, speed, eta, status string) {
+		// Download track via yt-dlp using user's session with smart alternative search fallback
+		res, dlErr := q.ytdlpClient.DownloadTrackForUser(taskCtx, entry.GetID(), trackTitle, entry.Artist, playlist.UserID, func(percent float64, speed, eta, status string) {
 			q.mu.Lock()
 			q.current.TrackPercentage = percent
 			q.current.Speed = speed
