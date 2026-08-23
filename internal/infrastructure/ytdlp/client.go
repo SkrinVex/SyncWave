@@ -342,7 +342,6 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--extractor-args", "youtube:player_client=android,ios,mweb",
 		"--no-check-certificates",
 		"--no-warnings",
-		"--prefer-ffmpeg",
 		"--js-runtimes", "node",
 		"--remote-components", "ejs:github",
 		"-f", "bestaudio/best",
@@ -351,7 +350,7 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"--audio-quality", "0",
 		"--write-thumbnail",
 		"--convert-thumbnails", "jpg",
-		"--add-metadata",
+		"--embed-metadata",
 		"--no-playlist",
 		"-o", outTemplate,
 		"--print", "METADATA:%(id)s|||%(title)s|||%(artist)s|||%(album)s|||%(duration)s|||%(uploader)s|||%(channel)s",
@@ -397,23 +396,6 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 			return res, nil
 		}
 		err = err2
-	}
-
-	// Attempt 3: Smart Alternative Search Fallback (if title/artist available and direct video ID is geo-restricted or unavailable)
-	searchQuery := strings.TrimSpace(fmt.Sprintf("%s %s audio", artist, title))
-	if (title != "" && title != youtubeID) && trackCtx.Err() == nil {
-		searchTarget := fmt.Sprintf("ytsearch1:%s", searchQuery)
-		res, err3 := c.executeDownloadForUser(trackCtx, youtubeID, searchTarget, outTemplate, format, userID, hasCookies, onProgress)
-		if err3 == nil {
-			if res.Title == "Unknown Title" || res.Title == "" {
-				res.Title = title
-			}
-			if res.Artist == "Unknown Artist" || res.Artist == "" || res.Artist == "NA" {
-				res.Artist = artist
-			}
-			return res, nil
-		}
-		err = err3
 	}
 
 	return nil, err
