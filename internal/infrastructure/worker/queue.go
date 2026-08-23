@@ -417,14 +417,14 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 				strings.Contains(errMsg, "blocked")
 
 			if isUnavailable {
-				// Automatically save into user's blacklist so future syncs skip this track instantly!
+				// Automatically save into user's blacklist so future syncs skip this nonexistent track instantly!
 				_ = q.blacklistRepo.Add(&domain.BlacklistItem{
 					YouTubeID: entry.GetID(),
 					UserID:    playlist.UserID,
 					Title:     trackTitle,
 					Artist:    entry.Artist,
 				})
-				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен недоступный на YouTube трек [%s] (%s): сохранен и больше не будет запрашиваться", trackTitle, entry.GetID()))
+				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен и занесен в черный список недоступный на YouTube трек [%s] (%s)", trackTitle, entry.GetID()))
 			} else if isAuth, reason := ytdlp.IsYTDLPAuthError(errMsg); isAuth || strings.Contains(errMsg, "авторизация") {
 				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека %s: %s", trackTitle, reason))
 				// Only broadcast cookie status if cookies on disk are genuinely expired/invalid
