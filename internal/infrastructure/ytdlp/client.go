@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -319,8 +320,6 @@ func (c *Client) buildBaseArgsForUser(userID string) []string {
 		"-R", "2",
 		"--no-mtime",
 		"--newline",
-		"--no-check-certificates",
-		"--no-warnings",
 		"--js-runtimes", "node",
 		"--remote-components", "ejs:github",
 		"--extractor-args", "youtube:skip=translated_subs",
@@ -351,10 +350,18 @@ func (c *Client) FetchFlatPlaylistForUser(ctx context.Context, urlOrID string, u
 	args = append(args,
 		"--flat-playlist",
 		"--dump-single-json",
-		"--no-warnings",
 		"--ignore-errors",
 		targetURL,
 	)
+
+	cookiePath := c.GetUserCookiesPath(userID)
+	cookieInfo, cErr := os.Stat(cookiePath)
+	cookieSize := int64(0)
+	if cErr == nil {
+		cookieSize = cookieInfo.Size()
+	}
+	log.Printf("[yt-dlp] Fetching playlist metadata for %s (cookies: %s, size: %d bytes)", targetURL, cookiePath, cookieSize)
+	log.Printf("[yt-dlp CMD] %s %s", c.ytdlpPath, strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, c.ytdlpPath, args...)
 	var stdout, stderr bytes.Buffer
@@ -363,6 +370,7 @@ func (c *Client) FetchFlatPlaylistForUser(ctx context.Context, urlOrID string, u
 
 	if err := cmd.Run(); err != nil {
 		errStr := stderr.String()
+		log.Printf("[yt-dlp ERROR] FetchFlatPlaylist failed: %v (stderr: %s)", err, strings.TrimSpace(errStr))
 		if isAuth, reason := IsYTDLPAuthError(errStr); isAuth {
 			return nil, fmt.Errorf("ошибка авторизации: %s", reason)
 		}
@@ -371,9 +379,11 @@ func (c *Client) FetchFlatPlaylistForUser(ctx context.Context, urlOrID string, u
 
 	var output FlatPlaylistOutput
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		log.Printf("[yt-dlp ERROR] Failed to parse playlist json: %v", err)
 		return nil, fmt.Errorf("failed to parse playlist json: %w", err)
 	}
 
+	log.Printf("[yt-dlp SUCCESS] Playlist extracted: %s (found %d entries)", output.Title, len(output.Entries))
 	return &output, nil
 }
 
@@ -414,8 +424,6 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"-R", "2",
 		"--no-mtime",
 		"--newline",
-		"--no-check-certificates",
-		"--no-warnings",
 		"--js-runtimes", "node",
 		"--remote-components", "ejs:github",
 		"--extractor-args", "youtube:skip=translated_subs",
@@ -436,7 +444,6 @@ func (c *Client) buildDownloadArgsForUser(targetURL, outTemplate, format string,
 		"-o", outTemplate,
 		"--print", "METADATA:%(id)s|||%(title)s|||%(artist)s|||%(album)s|||%(duration)s|||%(uploader)s|||%(channel)s|||%(track)s|||%(creator)s",
 		"--no-simulate",
-		"--no-quiet",
 		targetURL,
 	)
 
@@ -465,17 +472,21 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 	hasCookies := c.HasUserCookies(userID)
 
 	// Attempt 1: Direct YouTube URL with cookies (if available)
+	log.Printf("[Worker] [Attempt 1/3] Downloading %s (%s - %s) with cookies (hasCookies: %v)", youtubeID, artist, title, hasCookies)
 	res, err := c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, hasCookies, onProgress)
 	if err == nil {
 		return res, nil
 	}
+	log.Printf("[Worker] [Attempt 1/3] Failed for %s: %v", youtubeID, err)
 
 	// Attempt 2: If failed with cookies, retry without cookies
 	if hasCookies && trackCtx.Err() == nil {
+		log.Printf("[Worker] [Attempt 2/3] Retrying %s (%s - %s) WITHOUT cookies", youtubeID, artist, title)
 		res, err2 := c.executeDownloadForUser(trackCtx, youtubeID, targetURL, outTemplate, format, userID, false, onProgress)
 		if err2 == nil {
 			return res, nil
 		}
+		log.Printf("[Worker] [Attempt 2/3] Failed for %s: %v", youtubeID, err2)
 		err = err2
 	}
 
@@ -493,6 +504,7 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 		searchURL := fmt.Sprintf("ytsearch1:%s", searchQuery)
 
 		if hasCookies {
+			log.Printf("[Worker] [Attempt 3/3-A] Searching alternative for %s: '%s' with cookies", youtubeID, searchQuery)
 			res3, err3 := c.executeDownloadForUser(trackCtx, youtubeID, searchURL, outTemplate, format, userID, true, onProgress)
 			if err3 == nil {
 				res3.ID = youtubeID
@@ -504,8 +516,10 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 				}
 				return res3, nil
 			}
+			log.Printf("[Worker] [Attempt 3/3-A] Search with cookies failed for %s: %v", youtubeID, err3)
 		}
 
+		log.Printf("[Worker] [Attempt 3/3-B] Searching alternative for %s: '%s' WITHOUT cookies", youtubeID, searchQuery)
 		res4, err4 := c.executeDownloadForUser(trackCtx, youtubeID, searchURL, outTemplate, format, userID, false, onProgress)
 		if err4 == nil {
 			res4.ID = youtubeID
@@ -517,6 +531,7 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 			}
 			return res4, nil
 		}
+		log.Printf("[Worker] [Attempt 3/3-B] Search without cookies failed for %s: %v", youtubeID, err4)
 	}
 
 	return nil, err
@@ -524,6 +539,16 @@ func (c *Client) DownloadTrackForUser(ctx context.Context, youtubeID, title, art
 
 func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targetURL, outTemplate, format string, userID string, withCookies bool, onProgress ProgressCallback) (*DownloadResult, error) {
 	args := c.buildDownloadArgsForUser(targetURL, outTemplate, format, userID, withCookies)
+
+	cookiePath := c.GetUserCookiesPath(userID)
+	cookieInfo, cErr := os.Stat(cookiePath)
+	cookieSize := int64(0)
+	if cErr == nil {
+		cookieSize = cookieInfo.Size()
+	}
+
+	log.Printf("[yt-dlp] Downloading track %s (URL: %s, withCookies: %v, cookies: %s, size: %d bytes)", targetTrackID, targetURL, withCookies, cookiePath, cookieSize)
+	log.Printf("[yt-dlp CMD] %s %s", c.ytdlpPath, strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, c.ytdlpPath, args...)
 	stdoutPipe, err := cmd.StdoutPipe()
@@ -541,11 +566,17 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 
 	var metadataLine string
 	var mu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(2)
 
+	// Stream stdout in real-time
 	go func() {
+		defer wg.Done()
 		scanner := bufio.NewScanner(stdoutPipe)
 		for scanner.Scan() {
 			line := scanner.Text()
+			log.Printf("[yt-dlp stdout] %s", line)
+
 			if strings.HasPrefix(line, "METADATA:") {
 				mu.Lock()
 				metadataLine = line
@@ -564,14 +595,31 @@ func (c *Client) executeDownloadForUser(ctx context.Context, targetTrackID, targ
 		}
 	}()
 
+	// Stream stderr in real-time
 	var stderrBuf bytes.Buffer
 	go func() {
-		_, _ = stderrBuf.ReadFrom(stderrPipe)
+		defer wg.Done()
+		scanner := bufio.NewScanner(stderrPipe)
+		for scanner.Scan() {
+			line := scanner.Text()
+			log.Printf("[yt-dlp stderr] %s", line)
+			mu.Lock()
+			stderrBuf.WriteString(line)
+			stderrBuf.WriteString("\n")
+			mu.Unlock()
+		}
 	}()
 
 	cmdErr := cmd.Wait()
+	wg.Wait()
+
+	mu.Lock()
+	stdErrStr := strings.TrimSpace(stderrBuf.String())
+	mu.Unlock()
+
+	log.Printf("[yt-dlp EXIT] track=%s, exitErr=%v, stderrLen=%d", targetTrackID, cmdErr, len(stdErrStr))
+
 	if cmdErr != nil {
-		stdErrStr := stderrBuf.String()
 		if isAuth, reason := IsYTDLPAuthError(stdErrStr); isAuth {
 			return nil, fmt.Errorf("Ошибка авторизации YouTube (%s): %s", reason, stdErrStr)
 		}

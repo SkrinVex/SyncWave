@@ -434,7 +434,7 @@ func (q *WorkerQueue) processTask(task SyncTask) {
 				})
 				q.log(&playlist.ID, nil, domain.LogLevelWarn, fmt.Sprintf("Пропущен и занесен в черный список недоступный на YouTube трек [%s - %s] (%s)", trackArtist, trackTitle, entry.GetID()))
 			} else if isAuth, reason := ytdlp.IsYTDLPAuthError(errMsg); isAuth || strings.Contains(errMsg, "авторизация") {
-				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека [%s - %s]: %s", trackArtist, trackTitle, reason))
+				q.log(&playlist.ID, nil, domain.LogLevelError, fmt.Sprintf("Ошибка авторизации YouTube для трека [%s - %s]: %s (Детали: %s)", trackArtist, trackTitle, reason, errMsg))
 				// Only broadcast cookie status if cookies on disk are genuinely expired/invalid
 				valRes := q.ytdlpClient.ValidateUserCookies(playlist.UserID)
 				if valRes == nil || !valRes.IsValid || valRes.Status == ytdlp.CookieStatusExpired {
