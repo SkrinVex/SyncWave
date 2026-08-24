@@ -96,7 +96,7 @@ func (h *StreamHandler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Accept-Ranges", "bytes")
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", "no-transform, public, max-age=31536000, immutable")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
@@ -118,7 +118,9 @@ func (h *StreamHandler) ServeCover(w http.ResponseWriter, r *http.Request) {
 			defer file.Close()
 			if stat, err := file.Stat(); err == nil && stat.Size() > 0 {
 				w.Header().Set("Content-Type", "image/jpeg")
-				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				w.Header().Set("Cache-Control", "no-transform, public, max-age=31536000, immutable")
+				w.Header().Set("X-Accel-Buffering", "no")
+				w.Header().Set("X-Content-Type-Options", "nosniff")
 				http.ServeContent(w, r, "cover.jpg", stat.ModTime(), file)
 				return
 			}
@@ -239,6 +241,9 @@ func (h *StreamHandler) DownloadAudio(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
 	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Cache-Control", "no-transform, public, max-age=31536000, immutable")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 
 	http.ServeContent(w, r, rawFilename, stat.ModTime(), file)
 }
