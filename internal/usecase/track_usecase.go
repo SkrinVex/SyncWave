@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -148,7 +149,7 @@ func (u *TrackUsecase) UploadTracks(ctx context.Context, userID string, playlist
 		Errors:   make([]string, 0),
 	}
 
-	validExts := map[string]bool{
+	validAudioExts := map[string]bool{
 		".mp3":  true,
 		".flac": true,
 		".m4a":  true,
@@ -156,15 +157,13 @@ func (u *TrackUsecase) UploadTracks(ctx context.Context, userID string, playlist
 		".ogg":  true,
 		".wav":  true,
 		".aac":  true,
-		".webm": true,
 		".wma":  true,
-		".mp4":  true,
 	}
 
 	for _, fileInput := range files {
 		ext := strings.ToLower(filepath.Ext(fileInput.Filename))
-		if !validExts[ext] {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: неподдерживаемый аудиоформат (%s)", fileInput.Filename, ext))
+		if !validAudioExts[ext] {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: недопустимый формат файла (%s). Разрешена загрузка только аудиофайлов (.mp3, .m4a, .flac, .opus, .ogg, .wav, .aac, .wma)", fileInput.Filename, ext))
 			continue
 		}
 
@@ -193,6 +192,24 @@ func (u *TrackUsecase) UploadTracks(ctx context.Context, userID string, playlist
 			}
 		}
 
+		// 3. MIME Sniffing: reject video, images, executables, documents
+		sniffBuf := make([]byte, 512)
+		n, _ := fileInput.Reader.Read(sniffBuf)
+		if n > 0 {
+			detectedMime := strings.ToLower(http.DetectContentType(sniffBuf[:n]))
+			if strings.HasPrefix(detectedMime, "video/") ||
+				strings.HasPrefix(detectedMime, "image/") ||
+				strings.HasPrefix(detectedMime, "text/") ||
+				strings.HasPrefix(detectedMime, "application/pdf") ||
+				strings.HasPrefix(detectedMime, "application/zip") ||
+				strings.HasPrefix(detectedMime, "application/x-") {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: файл содержит недопустимый тип данных (%s). Разрешена загрузка только аудиофайлов.", fileInput.Filename, detectedMime))
+				continue
+			}
+		}
+
+		combinedReader := io.MultiReader(bytes.NewReader(sniffBuf[:n]), fileInput.Reader)
+
 		trackID := uuid.New().String()
 		destFileName := fmt.Sprintf("%s%s", trackID, ext)
 		destFilePath := filepath.Join(u.musicDir, destFileName)
@@ -203,7 +220,7 @@ func (u *TrackUsecase) UploadTracks(ctx context.Context, userID string, playlist
 			continue
 		}
 
-		written, err := io.Copy(outFile, fileInput.Reader)
+		written, err := io.Copy(outFile, combinedReader)
 		_ = outFile.Close()
 		if err != nil {
 			_ = os.Remove(destFilePath)
@@ -217,8 +234,22 @@ func (u *TrackUsecase) UploadTracks(ctx context.Context, userID string, playlist
 			continue
 		}
 
-		// 3. Extract Metadata and Cover Art
+		// 4. Extract Metadata and Validate Audio Stream via ffprobe
 		meta := u.extractMetadataAndCover(ctx, destFilePath, trackID, fileInput.Filename)
+
+		// Strict Stream Verification: MUST have an audio stream, and MUST NOT be a video file
+		if !meta.HasAudio || meta.HasRealVideo {
+			_ = os.Remove(destFilePath)
+			if meta.CoverPath != "" {
+				_ = os.Remove(meta.CoverPath)
+			}
+			if meta.HasRealVideo {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: файл содержит видеопоток. Загрузка видеофайлов запрещена, разрешена только музыка.", fileInput.Filename))
+			} else {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: файл не содержит валидной аудиодорожки или поврежден (%s)", fileInput.Filename, meta.ProbeError))
+			}
+			continue
+		}
 
 		var plIDPtr *string
 		if playlistID != "" {
@@ -269,21 +300,27 @@ func (u *TrackUsecase) UploadTracks(ctx context.Context, userID string, playlist
 }
 
 type extractedMeta struct {
-	Title     string
-	Artist    string
-	Album     string
-	Duration  int
-	Bitrate   int
-	CoverPath string
+	Title        string
+	Artist       string
+	Album        string
+	Duration     int
+	Bitrate      int
+	CoverPath    string
+	HasAudio     bool
+	HasRealVideo bool
+	ProbeError   string
 }
 
 func (u *TrackUsecase) extractMetadataAndCover(ctx context.Context, filePath, trackID, originalFilename string) extractedMeta {
 	meta := extractedMeta{
-		Title:    "",
-		Artist:   "",
-		Album:    "",
-		Duration: 0,
-		Bitrate:  320,
+		Title:        "",
+		Artist:       "",
+		Album:        "",
+		Duration:     0,
+		Bitrate:      320,
+		HasAudio:     false,
+		HasRealVideo: false,
+		ProbeError:   "",
 	}
 
 	// 1. Try ffprobe for audio stream and format metadata
@@ -308,9 +345,13 @@ func (u *TrackUsecase) extractMetadataAndCover(ctx context.Context, filePath, tr
 	if err := probeCmd.Run(); err == nil {
 		var probeData struct {
 			Streams []struct {
-				CodecName string `json:"codec_name"`
-				BitRate   string `json:"bit_rate"`
-				Duration  string `json:"duration"`
+				CodecType   string `json:"codec_type"`
+				CodecName   string `json:"codec_name"`
+				Disposition struct {
+					AttachedPic int `json:"attached_pic"`
+				} `json:"disposition"`
+				BitRate  string `json:"bit_rate"`
+				Duration string `json:"duration"`
 			} `json:"streams"`
 			Format struct {
 				Duration string            `json:"duration"`
@@ -320,6 +361,17 @@ func (u *TrackUsecase) extractMetadataAndCover(ctx context.Context, filePath, tr
 		}
 
 		if err := json.Unmarshal(stdout.Bytes(), &probeData); err == nil {
+			for _, s := range probeData.Streams {
+				if strings.EqualFold(s.CodecType, "audio") {
+					meta.HasAudio = true
+				}
+				if strings.EqualFold(s.CodecType, "video") {
+					if s.Disposition.AttachedPic == 0 {
+						meta.HasRealVideo = true
+					}
+				}
+			}
+
 			// Duration
 			if probeData.Format.Duration != "" {
 				if d, err := strconv.ParseFloat(probeData.Format.Duration, 64); err == nil && d > 0 {
@@ -359,7 +411,11 @@ func (u *TrackUsecase) extractMetadataAndCover(ctx context.Context, filePath, tr
 			meta.Title = getTag("title", "track_name", "song_name")
 			meta.Artist = getTag("artist", "album_artist", "composer", "author", "performer")
 			meta.Album = getTag("album", "album_name", "collection")
+		} else {
+			meta.ProbeError = "ошибка декодирования метаданных"
 		}
+	} else {
+		meta.ProbeError = "ffprobe не смог прочитать файл"
 	}
 
 	// 2. Fallback to clean filename if Title or Artist are missing

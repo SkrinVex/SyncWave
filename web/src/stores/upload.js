@@ -31,27 +31,36 @@ export const useUploadStore = defineStore('upload', () => {
     return Math.round(sum / tasks.value.length)
   })
 
+  const VALID_AUDIO_EXTS = ['.mp3', '.m4a', '.flac', '.opus', '.ogg', '.wav', '.aac', '.wma']
+
   async function uploadFiles(fileList, playlistId = '') {
     if (!fileList || fileList.length === 0) return
 
     const newFiles = Array.from(fileList)
-    const newTasks = newFiles.map((file, idx) => ({
-      id: `${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
-      file,
-      name: file.name,
-      size: file.size,
-      progress: 0,
-      status: 'pending', // 'pending' | 'uploading' | 'processing' | 'done' | 'error'
-      error: '',
-    }))
+    const newTasks = newFiles.map((file, idx) => {
+      const ext = '.' + (file.name.split('.').pop() || '').toLowerCase()
+      const isInvalid = !VALID_AUDIO_EXTS.includes(ext) ||
+        (file.type && (file.type.startsWith('video/') || file.type.startsWith('image/') || file.type.startsWith('text/') || file.type.startsWith('application/pdf')))
+
+      return {
+        id: `${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
+        file,
+        name: file.name,
+        size: file.size,
+        progress: isInvalid ? 100 : 0,
+        status: isInvalid ? 'error' : 'pending',
+        error: isInvalid ? (i18n.currentLang === 'ru' ? `Недопустимый формат (${ext}). Разрешена загрузка только музыки (.mp3, .m4a, .flac, .opus, .ogg, .wav, .aac, .wma)` : `Invalid file format (${ext}). Only audio files allowed`) : '',
+      }
+    })
 
     tasks.value.push(...newTasks)
     isMinimized.value = false
 
-    // Process uploads in batches of 3
+    // Process only valid pending uploads in batches of 3
+    const pendingTasks = newTasks.filter(t => t.status === 'pending')
     const batchSize = 3
-    for (let i = 0; i < newTasks.length; i += batchSize) {
-      const batch = newTasks.slice(i, i + batchSize)
+    for (let i = 0; i < pendingTasks.length; i += batchSize) {
+      const batch = pendingTasks.slice(i, i + batchSize)
       await Promise.all(batch.map(task => uploadSingleFile(task, playlistId)))
     }
 
