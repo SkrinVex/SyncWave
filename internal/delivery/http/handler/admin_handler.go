@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/syncwave/syncwave/internal/domain"
@@ -11,12 +12,14 @@ import (
 
 type AdminHandler struct {
 	userRepo        domain.UserRepository
+	trackRepo       domain.TrackRepository
 	settingsUsecase *usecase.SettingsUsecase
 }
 
-func NewAdminHandler(userRepo domain.UserRepository, settingsUsecase *usecase.SettingsUsecase) *AdminHandler {
+func NewAdminHandler(userRepo domain.UserRepository, trackRepo domain.TrackRepository, settingsUsecase *usecase.SettingsUsecase) *AdminHandler {
 	return &AdminHandler{
 		userRepo:        userRepo,
+		trackRepo:       trackRepo,
 		settingsUsecase: settingsUsecase,
 	}
 }
@@ -68,9 +71,35 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1. Fetch user tracks to clean up files from disk
+	var userTracks []domain.Track
+	if h.trackRepo != nil {
+		userTracks, _ = h.trackRepo.GetAllReady(targetID, "")
+	}
+
+	// 2. Delete user from database (cascades playlists, tracks, sync_logs, blacklist)
 	if err := h.userRepo.Delete(targetID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+
+	// 3. Clean up physical audio files and covers if not used by any other user
+	if h.trackRepo != nil && len(userTracks) > 0 {
+		for _, track := range userTracks {
+			if track.FilePath != "" {
+				if count, _ := h.trackRepo.CountTracksByFilePath(track.FilePath); count == 0 {
+					_ = os.Remove(track.FilePath)
+				}
+			}
+			if track.CoverPath != "" {
+				_ = os.Remove(track.CoverPath)
+			}
+		}
+	}
+
+	// 4. Delete user's isolated cookies.txt
+	if h.settingsUsecase != nil {
+		_ = h.settingsUsecase.DeleteCookies(targetID)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

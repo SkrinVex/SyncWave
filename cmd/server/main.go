@@ -74,7 +74,7 @@ func main() {
 	// 5. Delivery Handlers & Middlewares
 	authMiddleware := middleware.NewAuthMiddleware(jwtService, userRepo)
 	authHandler := handler.NewAuthHandler(authUsecase)
-	adminHandler := handler.NewAdminHandler(userRepo, settingsUsecase)
+	adminHandler := handler.NewAdminHandler(userRepo, trackRepo, settingsUsecase)
 	trackHandler := handler.NewTrackHandler(trackUsecase)
 	playlistHandler := handler.NewPlaylistHandler(playlistUsecase, syncUsecase)
 	syncHandler := handler.NewSyncHandler(syncUsecase, eventHub)
