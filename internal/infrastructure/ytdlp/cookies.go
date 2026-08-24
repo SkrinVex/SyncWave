@@ -3,6 +3,7 @@ package ytdlp
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -85,6 +86,7 @@ func ValidateCookieBytes(content []byte) *CookieValidationResult {
 		}
 	}
 
+	content = NormalizeCookiesToNetscape(content)
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	var foundAuthCookies []string
 	var earliestExpiry *time.Time
@@ -185,6 +187,110 @@ func ValidateCookieBytes(content []byte) *CookieValidationResult {
 		ExpiresAt:     earliestExpiry,
 		ExpiresInDays: daysRemaining,
 	}
+}
+
+// NormalizeCookiesToNetscape ensures the cookie content is in standard Netscape format for yt-dlp
+func NormalizeCookiesToNetscape(content []byte) []byte {
+	str := strings.TrimSpace(string(content))
+	if str == "" {
+		return content
+	}
+
+	// 1. If already in Netscape format
+	if strings.Contains(str, "# Netscape HTTP Cookie File") || strings.Contains(str, "\tTRUE\t") || strings.Contains(str, "\tFALSE\t") {
+		return content
+	}
+
+	// 2. Check if JSON array format
+	if strings.HasPrefix(str, "[") && strings.HasSuffix(str, "]") {
+		var jsonCookies []struct {
+			Domain     string      `json:"domain"`
+			Expiration interface{} `json:"expirationDate"`
+			HostOnly   bool        `json:"hostOnly"`
+			HttpOnly   bool        `json:"httpOnly"`
+			Name       string      `json:"name"`
+			Path       string      `json:"path"`
+			Secure     bool        `json:"secure"`
+			Value      string      `json:"value"`
+		}
+		if err := json.Unmarshal(content, &jsonCookies); err == nil && len(jsonCookies) > 0 {
+			var buf bytes.Buffer
+			buf.WriteString("# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n# This is a generated file!  Do not edit.\n\n")
+			for _, c := range jsonCookies {
+				exp := int64(2147483647)
+				if c.Expiration != nil {
+					switch v := c.Expiration.(type) {
+					case float64:
+						exp = int64(v)
+					case int64:
+						exp = v
+					case string:
+						if parsed, pErr := strconv.ParseInt(v, 10, 64); pErr == nil {
+							exp = parsed
+						}
+					}
+				}
+				dom := c.Domain
+				if dom == "" {
+					dom = ".youtube.com"
+				}
+				path := c.Path
+				if path == "" {
+					path = "/"
+				}
+				subdomains := "TRUE"
+				if strings.HasPrefix(dom, ".") {
+					subdomains = "TRUE"
+				} else {
+					subdomains = "FALSE"
+				}
+				secure := "FALSE"
+				if c.Secure {
+					secure = "TRUE"
+				}
+				buf.WriteString(fmt.Sprintf("%s\t%s\t%s\t%s\t%d\t%s\t%s\n", dom, subdomains, path, secure, exp, c.Name, c.Value))
+			}
+			return buf.Bytes()
+		}
+	}
+
+	// 3. Raw header format: "LOGIN_INFO=xxx; SAPISID=yyy; SID=zzz; ..."
+	if strings.Contains(str, "=") {
+		pairs := strings.Split(str, ";")
+		var buf bytes.Buffer
+		buf.WriteString("# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n# This is a generated file!  Do not edit.\n\n")
+		expiry := time.Now().Add(365 * 24 * time.Hour).Unix()
+		count := 0
+
+		for _, pair := range pairs {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			eqIdx := strings.Index(pair, "=")
+			if eqIdx == -1 {
+				continue
+			}
+			name := strings.TrimSpace(pair[:eqIdx])
+			value := strings.TrimSpace(pair[eqIdx+1:])
+
+			if name == "" {
+				continue
+			}
+
+			// Add for youtube.com
+			buf.WriteString(fmt.Sprintf(".youtube.com\tTRUE\t/\tTRUE\t%d\t%s\t%s\n", expiry, name, value))
+			// Also add for google.com
+			buf.WriteString(fmt.Sprintf(".google.com\tTRUE\t/\tTRUE\t%d\t%s\t%s\n", expiry, name, value))
+			count++
+		}
+
+		if count > 0 {
+			return buf.Bytes()
+		}
+	}
+
+	return content
 }
 
 // IsYTDLPAuthError inspects yt-dlp error output for authentication and expired cookie indicators

@@ -258,6 +258,7 @@ func (c *Client) GetUserCookiesModTime(userID string) (string, bool) {
 }
 
 func (c *Client) SaveUserCookies(userID string, content []byte) error {
+	normalized := NormalizeCookiesToNetscape(content)
 	var path string
 	if userID != "" {
 		path = filepath.Join(filepath.Dir(c.cookiesPath), "cookies", fmt.Sprintf("cookies_%s.txt", userID))
@@ -265,7 +266,7 @@ func (c *Client) SaveUserCookies(userID string, content []byte) error {
 		path = c.cookiesPath
 	}
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
-	return os.WriteFile(path, content, 0600)
+	return os.WriteFile(path, normalized, 0600)
 }
 
 func (c *Client) DeleteUserCookies(userID string) error {
@@ -290,8 +291,9 @@ func (c *Client) GetCookiesModTime() (string, bool) {
 }
 
 func (c *Client) SaveCookies(content []byte) error {
+	normalized := NormalizeCookiesToNetscape(content)
 	_ = os.MkdirAll(filepath.Dir(c.cookiesPath), 0755)
-	return os.WriteFile(c.cookiesPath, content, 0600)
+	return os.WriteFile(c.cookiesPath, normalized, 0600)
 }
 
 func (c *Client) ValidateUserCookies(userID string) *CookieValidationResult {
