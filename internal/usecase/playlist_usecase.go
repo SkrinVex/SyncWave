@@ -43,6 +43,27 @@ func (u *PlaylistUsecase) Create(userID string, req CreatePlaylistRequest) (*dom
 		return nil, errors.New("Необходимо указать ссылку на плейлист или его ID")
 	}
 
+	isManual := strings.EqualFold(cleanInput, "MANUAL") || strings.HasPrefix(cleanInput, "manual:") || strings.HasPrefix(cleanInput, "local:")
+	if isManual {
+		title := strings.TrimSpace(req.Title)
+		if title == "" {
+			title = "Ручной плейлист"
+		}
+		p := &domain.Playlist{
+			ID:                  uuid.New().String(),
+			UserID:              userID,
+			Title:               title,
+			YouTubeID:           "MANUAL",
+			AutoSync:            false,
+			SyncIntervalMinutes: 0,
+			Status:              domain.PlaylistStatusIdle,
+		}
+		if err := u.playlistRepo.Create(p); err != nil {
+			return nil, err
+		}
+		return p, nil
+	}
+
 	normalizedInput := ytdlp.NormalizePlaylistURL(cleanInput)
 
 	// Check if already registered for THIS user
